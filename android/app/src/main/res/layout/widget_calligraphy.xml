@@ -19,26 +19,31 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:orientation="vertical"
-        android:gravity="center">
+        android:gravity="center"
+        android:padding="8dp">
 
-        <!-- Day Name (Large Calligraphy Style) -->
+        <ImageView
+            android:id="@+id/iv_day_name"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:scaleType="fitCenter"
+            android:contentDescription="@null"
+            android:visibility="visible" />
+
         <TextView
             android:id="@+id/tv_day_name"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="الأحد"
-            android:textColor="#FFFFFF"
             android:textSize="56sp"
             android:textStyle="bold"
-            android:fontFamily="sans-serif-thin"
-            android:shadowColor="#80000000"
-            android:shadowDx="2"
-            android:shadowDy="2"
-            android:shadowRadius="4"
+            android:textColor="@android:color/white"
+            android:gravity="center"
+            android:fontFamily="sans-serif"
             android:includeFontPadding="false"
-            android:lineSpacingMultiplier="0.8"/>
+            android:text="الأحد"
+            android:visibility="gone" />
 
-        <!-- Date (Hijri/Gregorian) -->
         <TextView
             android:id="@+id/tv_full_date"
             android:layout_width="wrap_content"

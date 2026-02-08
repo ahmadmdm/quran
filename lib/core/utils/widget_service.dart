@@ -94,24 +94,35 @@ class WidgetService {
     required int textColor,
     required int accentColor,
     required double opacity,
+    String? fontStyle,
+    String? widgetType, // Add widgetType parameter
   }) async {
     // Convert colors to Hex Strings (#AARRGGBB) for Android compatibility
     String toHex(int colorValue) =>
         '#${(colorValue & 0xFFFFFFFF).toRadixString(16).padLeft(8, '0').toUpperCase()}';
 
+    // Determine prefix based on widget type (default to global if null)
+    final prefix = widgetType != null
+        ? '${widgetType.toLowerCase()}_'
+        : 'widget_';
+
     await HomeWidget.saveWidgetData<String>(
-      'widget_background_color',
+      '${prefix}background_color',
       toHex(backgroundColor),
     );
     await HomeWidget.saveWidgetData<String>(
-      'widget_text_color',
+      '${prefix}text_color',
       toHex(textColor),
     );
     await HomeWidget.saveWidgetData<String>(
-      'widget_accent_color',
+      '${prefix}accent_color',
       toHex(accentColor),
     );
-    await HomeWidget.saveWidgetData<double>('widget_opacity', opacity);
+    await HomeWidget.saveWidgetData<double>('${prefix}opacity', opacity);
+
+    if (fontStyle != null) {
+      await HomeWidget.saveWidgetData<String>('${prefix}font_style', fontStyle);
+    }
 
     // Update all widgets
     await _updateAllWidgets();
@@ -123,12 +134,16 @@ class WidgetService {
     required Color textColor,
     required Color accentColor,
     required double opacity,
+    String? fontStyle,
+    String? widgetType, // Add widgetType parameter
   }) async {
     await saveWidgetSettings(
       backgroundColor: backgroundColor.value,
       textColor: textColor.value,
       accentColor: accentColor.value,
       opacity: opacity,
+      fontStyle: fontStyle,
+      widgetType: widgetType,
     );
   }
 

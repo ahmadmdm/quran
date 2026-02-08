@@ -18,6 +18,7 @@ class _WidgetCustomizationPageState
   Color _accentColor = const Color(0xFFC9A24D);
   double _opacity = 1.0;
   String _selectedWidget = 'Minimal';
+  String _selectedFontStyle = 'default';
 
   final List<Color> _backgroundColors = [
     const Color(0xFF0F1629), // Dark Blue (Default)
@@ -90,7 +91,21 @@ class _WidgetCustomizationPageState
       'icon': Icons.auto_awesome,
       'size': '4x3',
     },
+    {
+      'id': 'Calligraphy',
+      'name': 'مخطوطة اليوم',
+      'description': 'ويدجت التاريخ بتصميم خط عربي مميز',
+      'icon': Icons.edit_note,
+      'size': '2x2',
+    },
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // Ideally load saved settings for the default selected widget
+    // For now we start with defaults or what's in memory
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -180,6 +195,13 @@ class _WidgetCustomizationPageState
                     ),
                   ),
                   const SizedBox(height: 28),
+
+                  if (_selectedWidget == 'Calligraphy') ...[
+                    _buildSectionTitle(theme, 'نمط الخط'),
+                    const SizedBox(height: 12),
+                    _buildFontStyleSelector(),
+                    const SizedBox(height: 28),
+                  ],
 
                   // Background Color
                   _buildSectionTitle(theme, 'لون الخلفية'),
@@ -409,6 +431,64 @@ class _WidgetCustomizationPageState
     );
   }
 
+  Widget _buildFontStyleSelector() {
+    final styles = [
+      {'id': 'default', 'name': 'افتراضي', 'sample': 'أ ب ت'},
+      {'id': 'serif', 'name': 'نسخ', 'sample': 'أ ب ت'},
+      {'id': 'cursive', 'name': 'رقعة', 'sample': 'أ ب ت'},
+      {'id': 'monospace', 'name': 'كوفي', 'sample': 'أ ب ت'},
+    ];
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: styles.map((style) {
+          final isSelected = _selectedFontStyle == style['id'];
+          return GestureDetector(
+            onTap: () => setState(() => _selectedFontStyle = style['id']!),
+            child: Container(
+              margin: const EdgeInsets.only(right: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? _accentColor.withValues(alpha: 0.15)
+                    : Theme.of(context).cardColor,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isSelected ? _accentColor : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Text(
+                    style['sample']!,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: _getFontFamilyForStyle(style['id']!),
+                      color: isSelected
+                          ? _accentColor
+                          : Theme.of(context).textTheme.bodyMedium?.color,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    style['name']!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).textTheme.bodySmall?.color,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
   Widget _buildColorPicker(
     List<Color> colors,
     Color selectedColor,
@@ -523,8 +603,73 @@ class _WidgetCustomizationPageState
         return _buildHijriDatePreview();
       case 'Creative':
         return _buildCreativePreview();
+      case 'Calligraphy':
+        return _buildCalligraphyPreview();
       default:
         return _buildMinimalPreview();
+    }
+  }
+
+  Widget _buildCalligraphyPreview() {
+    return Container(
+      width: 180,
+      height: 180,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _backgroundColor.withValues(alpha: _opacity),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+        image: const DecorationImage(
+          image: AssetImage(
+            'assets/images/widget_gradient_bg.png',
+          ), // Assuming this exists or handled by color
+          fit: BoxFit.cover,
+          opacity: 0.2,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            'الأحد',
+            style: TextStyle(
+              color: _textColor,
+              fontSize: 48,
+              fontWeight: FontWeight.bold,
+              fontFamily: _getFontFamilyForStyle(_selectedFontStyle),
+              height: 0.8,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '٢٠ شعبان، ١٤٤٧',
+            style: TextStyle(
+              color: _textColor.withValues(alpha: 0.8),
+              fontSize: 16,
+              fontWeight: FontWeight.w300,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _getFontFamilyForStyle(String style) {
+    switch (style) {
+      case 'serif':
+        return 'Times New Roman'; // Fallback to system serif
+      case 'cursive':
+        return 'Pacifico'; // Use Google Fonts if available or system
+      case 'monospace':
+        return 'Courier New';
+      default:
+        return null; // Default system font
     }
   }
 
@@ -1055,6 +1200,8 @@ class _WidgetCustomizationPageState
         textColor: _textColor,
         accentColor: _accentColor,
         opacity: _opacity,
+        fontStyle: _selectedWidget == 'Calligraphy' ? _selectedFontStyle : null,
+        widgetType: _selectedWidget, // Pass selected widget type
       );
 
       if (mounted) {
