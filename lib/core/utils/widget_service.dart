@@ -13,6 +13,7 @@ class WidgetService {
     'GlassCardWidgetProvider',
     'QuranVerseWidgetProvider',
     'HijriDateWidgetProvider',
+    'CalligraphyWidgetProvider',
     'CreativeWidgetProvider',
   ];
 
@@ -34,11 +35,11 @@ class WidgetService {
     await HomeWidget.saveWidgetData<String>('time_remaining', timeRemaining);
     await HomeWidget.saveWidgetData<String>('next_prayer', nextPrayerName);
     await HomeWidget.saveWidgetData<bool>('is_sunrise', isSunrise);
-    
+
     if (sunriseTime != null) {
       await HomeWidget.saveWidgetData<String>('sunrise_time', sunriseTime);
     }
-    
+
     await HomeWidget.saveWidgetData<int>(
       'next_prayer_millis',
       nextPrayerTimeMillis,

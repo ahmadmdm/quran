@@ -92,7 +92,8 @@ class WidgetUpdateReceiver : BroadcastReceiver() {
                 GlassCardWidgetProvider::class.java,
                 QuranVerseWidgetProvider::class.java,
                 CreativeWidgetProvider::class.java,
-                HijriDateWidgetProvider::class.java
+                HijriDateWidgetProvider::class.java,
+                CalligraphyWidgetProvider::class.java
             )
             
             var hasActiveWidgets = false

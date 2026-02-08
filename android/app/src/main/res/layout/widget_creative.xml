@@ -22,7 +22,7 @@
             android:layout_marginStart="8dp">
 
             <!-- Background Circle -->
-            <View
+            <ImageView
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:background="@drawable/widget_circle_bg"/>
@@ -104,7 +104,7 @@
     </RelativeLayout>
 
     <!-- Divider -->
-    <View
+    <ImageView
         android:id="@+id/divider"
         android:layout_width="match_parent"
         android:layout_height="1dp"

@@ -125,6 +125,15 @@
                 android:resource="@xml/widget_hijri_date_info" />
         </receiver>
 
+        <!-- Calligraphy Widget -->
+        <receiver android:name=".widget.CalligraphyWidgetProvider" android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider"
+                android:resource="@xml/widget_calligraphy_info" />
+        </receiver>
+
         <!-- Creative Widget -->
         <receiver android:name=".widget.CreativeWidgetProvider" android:exported="true">
             <intent-filter>

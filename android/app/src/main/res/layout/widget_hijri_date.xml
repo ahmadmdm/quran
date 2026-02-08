@@ -80,7 +80,7 @@
         </LinearLayout>
 
         <!-- Decorative Divider -->
-        <View
+        <ImageView
             android:layout_width="80dp"
             android:layout_height="1dp"
             android:layout_marginTop="12dp"
@@ -111,7 +111,7 @@
     </LinearLayout>
 
     <!-- Islamic Pattern Overlay (decorative) -->
-    <View
+    <ImageView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:background="@drawable/widget_islamic_pattern"
