@@ -10,11 +10,15 @@ import '../../../../core/localization/app_localizations.dart';
 class QuranReaderPage extends StatefulWidget {
   final int initialSurahNumber;
   final int? initialVerseNumber;
+  final bool isWirdMode;
+  final int? khatmaId;
 
   const QuranReaderPage({
     super.key,
     required this.initialSurahNumber,
     this.initialVerseNumber,
+    this.isWirdMode = false,
+    this.khatmaId,
   });
 
   @override
@@ -94,6 +98,71 @@ class _QuranReaderPageState extends State<QuranReaderPage>
   Future<void> _saveLastReadVerse(int verse) async {
     final box = Hive.box('settings');
     await box.put('last_read_verse', verse);
+
+    // Update Wird/Khatma progress
+    final pageNumber = quran.getPageNumber(_currentSurahNumber, verse);
+
+    if (widget.isWirdMode) {
+      await _updateWirdProgress(box, pageNumber);
+    }
+
+    if (widget.khatmaId != null) {
+      await _updateKhatmaProgress(box, pageNumber);
+    }
+  }
+
+  Future<void> _updateWirdProgress(Box box, int pageNumber) async {
+    final currentWirdPage = box.get('daily_wird_current_page', defaultValue: 1);
+    final lastDate = box.get('daily_wird_last_date', defaultValue: '');
+    final today = DateTime.now().toString().split(' ')[0];
+    
+    // Check if new day, update start page if needed
+    var startPage = box.get('daily_wird_start_page');
+    if (lastDate != today) {
+        startPage = currentWirdPage;
+        await box.put('daily_wird_last_date', today);
+        await box.put('daily_wird_start_page', startPage);
+        await box.put('daily_wird_completed_today', false);
+    } else if (startPage == null) {
+        startPage = currentWirdPage;
+        await box.put('daily_wird_start_page', startPage);
+    }
+
+    // Only update if we moved forward
+    if (pageNumber > currentWirdPage) {
+      await box.put('daily_wird_current_page', pageNumber);
+
+      // Update completion status if goal reached
+      final dailyPages = box.get('daily_wird_pages', defaultValue: 5);
+      
+      // If we read enough pages
+      if (pageNumber >= startPage + dailyPages) {
+          final completedToday = box.get('daily_wird_completed_today', defaultValue: false);
+          if (!completedToday) {
+              await box.put('daily_wird_completed_today', true);
+              // Increment streak if completed today
+              final streak = box.get('daily_wird_streak', defaultValue: 0);
+              await box.put('daily_wird_streak', streak + 1);
+          }
+      }
+    }
+  }
+
+  Future<void> _updateKhatmaProgress(Box box, int pageNumber) async {
+    final khatmaList = (box.get('khatma_list', defaultValue: <Map>[]) as List)
+        .cast<Map>();
+    final index = khatmaList.indexWhere((k) => k['id'] == widget.khatmaId);
+
+    if (index != -1) {
+      final khatma = Map<String, dynamic>.from(khatmaList[index]);
+      final currentKhatmaPage = khatma['current_page'] ?? 1;
+
+      if (pageNumber > currentKhatmaPage) {
+        khatma['current_page'] = pageNumber;
+        khatmaList[index] = khatma;
+        await box.put('khatma_list', khatmaList);
+      }
+    }
   }
 
   Future<void> _checkFavorite() async {

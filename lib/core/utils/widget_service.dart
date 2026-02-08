@@ -20,10 +20,13 @@ class WidgetService {
     required String nextPrayerName,
     required String nextPrayerTime,
     required String timeRemaining,
+    required int nextPrayerTimeMillis,
+    int? nextPrayerIndex,
     List<String>? prayerNames,
     List<String>? prayerTimes,
     List<int>? prayerTimeMillis,
     String? location,
+    String? sunriseTime, // Added sunrise time
     bool isSunrise = false, // Flag to indicate if next prayer is Sunrise
   }) async {
     await HomeWidget.saveWidgetData<String>('next_prayer_name', nextPrayerName);
@@ -31,6 +34,22 @@ class WidgetService {
     await HomeWidget.saveWidgetData<String>('time_remaining', timeRemaining);
     await HomeWidget.saveWidgetData<String>('next_prayer', nextPrayerName);
     await HomeWidget.saveWidgetData<bool>('is_sunrise', isSunrise);
+    
+    if (sunriseTime != null) {
+      await HomeWidget.saveWidgetData<String>('sunrise_time', sunriseTime);
+    }
+    
+    await HomeWidget.saveWidgetData<int>(
+      'next_prayer_millis',
+      nextPrayerTimeMillis,
+    );
+
+    if (nextPrayerIndex != null) {
+      await HomeWidget.saveWidgetData<int>(
+        'next_prayer_index',
+        nextPrayerIndex,
+      );
+    }
 
     if (location != null) {
       await HomeWidget.saveWidgetData<String>('location', location);

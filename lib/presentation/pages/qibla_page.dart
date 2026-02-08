@@ -1,8 +1,9 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:sensors_plus/sensors_plus.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter/services.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/localization/app_localizations.dart';
@@ -22,16 +23,7 @@ class _QiblaPageState extends ConsumerState<QiblaPage>
   late AnimationController _pulseController;
   late AnimationController _rotationController;
   late Animation<double> _pulseAnimation;
-  StreamSubscription<MagnetometerEvent>? _magnetometerSubscription;
-  StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
-
-  // For smoothing
-  final List<double> _headingHistory = [];
-  static const int _smoothingWindow = 15;
-
-  // Accelerometer values for tilt compensation
-  double _pitch = 0;
-  double _roll = 0;
+  StreamSubscription<CompassEvent>? _compassSubscription;
 
   // Calibration state
   bool _isCalibrating = false;
@@ -40,9 +32,6 @@ class _QiblaPageState extends ConsumerState<QiblaPage>
 
   // Accuracy indicator
   double _accuracy = 0;
-
-  // Magnetic declination (will be calculated based on location)
-  final double _magneticDeclination = 0;
 
   @override
   void initState() {
@@ -62,88 +51,66 @@ class _QiblaPageState extends ConsumerState<QiblaPage>
       duration: const Duration(milliseconds: 300),
     );
 
-    // Listen to accelerometer for tilt compensation
-    _accelerometerSubscription = accelerometerEventStream().listen((
-      AccelerometerEvent event,
-    ) {
+    // Listen to compass events
+    _compassSubscription = FlutterCompass.events?.listen((event) {
       if (mounted) {
         setState(() {
-          _pitch = math.atan2(
-            event.y,
-            math.sqrt(event.x * event.x + event.z * event.z),
-          );
-          _roll = math.atan2(-event.x, event.z);
-        });
-      }
-    });
+          // Use true heading if available, otherwise magnetic heading
+          final heading = event.heading ?? event.headingForCameraMode ?? 0;
 
-    // Listen to magnetometer with smoothing
-    _magnetometerSubscription = magnetometerEventStream().listen((
-      MagnetometerEvent event,
-    ) {
-      // Calculate magnetic field strength for accuracy
-      double fieldStrength = math.sqrt(
-        event.x * event.x + event.y * event.y + event.z * event.z,
-      );
+          // Update accuracy
+          final accuracy = event.accuracy ?? 0;
 
-      // Check if calibration is needed (field strength too low or too high)
-      if (fieldStrength < 25 || fieldStrength > 65) {
-        _needsCalibration = true;
-        _accuracy = 0.3;
-      } else {
-        _needsCalibration = false;
-        _accuracy = math.min(1.0, fieldStrength / 50);
-      }
+          if (Platform.isAndroid) {
+            // Android: 3=High, 2=Medium, 1=Low, 0=Unreliable
+            if (accuracy >= 3) {
+              _accuracy = 0.9; // High
+              _needsCalibration = false;
+            } else if (accuracy >= 2) {
+              _accuracy = 0.6; // Medium
+              _needsCalibration = false;
+            } else if (accuracy >= 1) {
+              _accuracy = 0.3; // Low
+              _needsCalibration = true;
+            } else {
+              _accuracy = 0.1; // Unreliable
+              _needsCalibration = true;
+            }
+          } else {
+            // iOS: Degrees (lower is better)
+            if (accuracy < 0) {
+              _accuracy = 0.1; // Invalid/Unreliable
+              _needsCalibration = true;
+            } else if (accuracy < 15) {
+              _accuracy = 0.9; // High
+              _needsCalibration = false;
+            } else if (accuracy < 45) {
+              _accuracy = 0.6; // Medium
+              _needsCalibration = false;
+            } else {
+              _accuracy = 0.3; // Low
+              _needsCalibration = true;
+            }
+          }
 
-      // Tilt-compensated heading calculation
-      double mx = event.x;
-      double my = event.y;
-      double mz = event.z;
+          _targetHeading = heading;
 
-      // Apply tilt compensation
-      double cosPitch = math.cos(_pitch);
-      double sinPitch = math.sin(_pitch);
-      double cosRoll = math.cos(_roll);
-      double sinRoll = math.sin(_roll);
-
-      double xh =
-          mx * cosRoll + my * sinRoll * sinPitch + mz * sinRoll * cosPitch;
-      double yh = my * cosPitch - mz * sinPitch;
-
-      double heading = math.atan2(yh, xh);
-
-      // Convert to degrees and normalize
-      heading = heading * (180 / math.pi);
-      if (heading < 0) {
-        heading = 360 + heading;
-      }
-
-      // Apply smoothing
-      _headingHistory.add(heading);
-      if (_headingHistory.length > _smoothingWindow) {
-        _headingHistory.removeAt(0);
-      }
-
-      // Calculate smoothed heading (circular mean)
-      double sinSum = 0;
-      double cosSum = 0;
-      for (var h in _headingHistory) {
-        sinSum += math.sin(h * math.pi / 180);
-        cosSum += math.cos(h * math.pi / 180);
-      }
-      double smoothedHeading = math.atan2(sinSum, cosSum) * 180 / math.pi;
-      if (smoothedHeading < 0) {
-        smoothedHeading = 360 + smoothedHeading;
-      }
-
-      if (mounted) {
-        setState(() {
-          _targetHeading = smoothedHeading;
-          // Smooth animation
+          // Adaptive smoothing
           double diff = _targetHeading - _heading;
+          // Normalize to -180 to 180
           if (diff > 180) diff -= 360;
           if (diff < -180) diff += 360;
-          _heading += diff * 0.12; // Smoother interpolation
+
+          double alpha = 0.1; // Default
+          if (diff.abs() > 20) {
+            alpha = 0.4; // Fast turn
+          } else if (diff.abs() < 2) {
+            alpha = 0.05; // Filter jitter when stable
+          }
+
+          _heading += diff * alpha;
+
+          // Normalize heading
           if (_heading < 0) _heading += 360;
           if (_heading >= 360) _heading -= 360;
         });
@@ -153,36 +120,36 @@ class _QiblaPageState extends ConsumerState<QiblaPage>
 
   @override
   void dispose() {
-    _magnetometerSubscription?.cancel();
-    _accelerometerSubscription?.cancel();
+    _compassSubscription?.cancel();
     _pulseController.dispose();
     _rotationController.dispose();
     super.dispose();
   }
 
   void _startCalibration() {
-    setState(() {
-      _isCalibrating = true;
-      _calibrationProgress = 0;
-    });
-
-    // Simulate calibration progress
-    Timer.periodic(const Duration(milliseconds: 100), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-
-      setState(() {
-        _calibrationProgress += 0.02;
-        if (_calibrationProgress >= 1.0) {
-          _isCalibrating = false;
-          _needsCalibration = false;
-          timer.cancel();
-          HapticFeedback.mediumImpact();
-        }
-      });
-    });
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('معايرة البوصلة'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.screen_rotation, size: 60, color: Colors.blue),
+            const SizedBox(height: 16),
+            const Text(
+              'حرك هاتفك في الهواء على شكل رقم 8 (∞) عدة مرات لمعايرة البوصلة وتحسين الدقة.',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('حسناً'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

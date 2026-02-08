@@ -54,6 +54,7 @@ class HijriDateWidgetProvider : AppWidgetProvider() {
 
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
+        WidgetUpdateReceiver.checkAndCancelUpdates(context)
     }
 
     private fun updateAppWidget(

@@ -168,6 +168,7 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
       valueListenable: _settingsBox.listenable(
         keys: [
           'daily_wird_current_page',
+          'daily_wird_start_page',
           'daily_wird_completed_today',
           'daily_wird_streak',
           'daily_wird_last_date',
@@ -184,10 +185,27 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
 
         // Check if it's a new day
         final today = DateTime.now().toString().split(' ')[0];
-        if (lastDate != today && completedToday) {
+        if (lastDate != today) {
           // Reset for new day
+          // We must do this in a microtask or ensure it doesn't cause loop issues,
+          // but since we update lastDate, it should be fine.
+          // However, modifying state during build is generally bad.
+          // Better to do this in initState or an effect, but here we are inside a builder.
+          // We'll use a post-frame callback to avoid build-phase side effects if possible,
+          // but Hive put is async-ish.
+
+          // Actually, let's just calculate the values to display, and update the DB lazily?
+          // No, we need consistency.
+          // We will update it.
+          box.put('daily_wird_last_date', today);
+          box.put('daily_wird_start_page', currentPage);
           box.put('daily_wird_completed_today', false);
         }
+
+        final startPage = box.get(
+          'daily_wird_start_page',
+          defaultValue: currentPage,
+        );
 
         // Calculate progress
         final totalPages = 604; // Total pages in Quran
@@ -203,7 +221,12 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
               const SizedBox(height: 20),
 
               // Today's Progress Card
-              _buildTodayProgressCard(context, currentPage, completedToday),
+              _buildTodayProgressCard(
+                context,
+                currentPage,
+                startPage,
+                completedToday,
+              ),
 
               const SizedBox(height: 20),
 
@@ -305,10 +328,12 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
   Widget _buildTodayProgressCard(
     BuildContext context,
     int currentPage,
+    int startPage,
     bool completedToday,
   ) {
     final theme = Theme.of(context);
     final todayProgress = completedToday ? 1.0 : 0.0;
+    final endPage = startPage + _dailyPages - 1;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -412,7 +437,7 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '$currentPage - ${currentPage + _dailyPages - 1}',
+                      '$startPage - $endPage',
                       style: theme.textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                         color: theme.colorScheme.secondary,
@@ -534,6 +559,7 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
               builder: (context) => QuranReaderPage(
                 initialSurahNumber: surahNumber,
                 initialVerseNumber: verseNumber,
+                isWirdMode: true,
               ),
             ),
           );
@@ -837,8 +863,10 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        QuranReaderPage(initialSurahNumber: surahNumber),
+                    builder: (context) => QuranReaderPage(
+                      initialSurahNumber: surahNumber,
+                      khatmaId: khatma['id'],
+                    ),
                   ),
                 );
               },

@@ -21,7 +21,7 @@ class SmartCardWidgetProvider : AppWidgetProvider() {
     
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
-        WidgetUpdateReceiver.cancelUpdates(context)
+        WidgetUpdateReceiver.checkAndCancelUpdates(context)
     }
 
     override fun onUpdate(
@@ -163,11 +163,15 @@ class SmartCardWidgetProvider : AppWidgetProvider() {
                     views.setInt(R.id.iv_background, "setColorFilter", bgColor)
                     
                     // Check if this is the next prayer
-                    var nextPrayerIndex = -1
-                    for (i in 0..4) {
-                        val pMillis = widgetData.getLong("prayer_time_millis_$i", 0)
-                        if (pMillis > now && nextPrayerIndex == -1) {
-                            nextPrayerIndex = i
+                    var nextPrayerIndex = widgetData.getInt("next_prayer_index", -1)
+                    
+                    // Fallback to time-based calculation if next_prayer_index is not set or invalid
+                    if (nextPrayerIndex == -1) {
+                        for (i in 0..4) {
+                            val pMillis = widgetData.getLong("prayer_time_millis_$i", 0)
+                            if (pMillis > now && nextPrayerIndex == -1) {
+                                nextPrayerIndex = i
+                            }
                         }
                     }
                     

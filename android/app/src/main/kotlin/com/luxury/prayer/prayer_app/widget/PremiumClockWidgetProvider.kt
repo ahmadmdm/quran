@@ -21,7 +21,7 @@ class PremiumClockWidgetProvider : AppWidgetProvider() {
     
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
-        WidgetUpdateReceiver.cancelUpdates(context)
+        WidgetUpdateReceiver.checkAndCancelUpdates(context)
     }
     
     override fun onUpdate(
@@ -124,16 +124,19 @@ class PremiumClockWidgetProvider : AppWidgetProvider() {
     
     private fun calculateTimeRemaining(widgetData: android.content.SharedPreferences): String {
         val currentTime = System.currentTimeMillis()
-        var nextPrayerTime = Long.MAX_VALUE
+        var nextPrayerTime = widgetData.getLong("next_prayer_millis", 0L)
         
-        for (i in 0..5) {
-            val prayerTimeMillis = widgetData.getLong("prayer_time_millis_$i", 0L)
-            if (prayerTimeMillis > currentTime && prayerTimeMillis < nextPrayerTime) {
-                nextPrayerTime = prayerTimeMillis
+        if (nextPrayerTime <= currentTime) {
+            nextPrayerTime = Long.MAX_VALUE
+            for (i in 0..5) {
+                val prayerTimeMillis = widgetData.getLong("prayer_time_millis_$i", 0L)
+                if (prayerTimeMillis > currentTime && prayerTimeMillis < nextPrayerTime) {
+                    nextPrayerTime = prayerTimeMillis
+                }
             }
         }
         
-        return if (nextPrayerTime != Long.MAX_VALUE) {
+        return if (nextPrayerTime != Long.MAX_VALUE && nextPrayerTime > currentTime) {
             val remainingMillis = nextPrayerTime - currentTime
             val hours = TimeUnit.MILLISECONDS.toHours(remainingMillis)
             val minutes = TimeUnit.MILLISECONDS.toMinutes(remainingMillis) % 60

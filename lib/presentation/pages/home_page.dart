@@ -85,19 +85,34 @@ class _HomePageState extends ConsumerState<HomePage>
         );
 
         // Update Widget Data
-        // Get next prayer, but skip Sunrise for widget display
+        // Get next prayer
         Prayer nextPrayer = prayerTimes.nextPrayer();
-        bool isSunrise = nextPrayer == Prayer.sunrise;
+        DateTime? nextPrayerTime = prayerTimes.timeForPrayer(nextPrayer);
 
-        // If next prayer is Sunrise, find the actual next prayer (Dhuhr)
-        Prayer widgetNextPrayer = nextPrayer;
-        DateTime? widgetNextPrayerTime = prayerTimes.timeForPrayer(nextPrayer);
-
-        if (isSunrise) {
-          // Skip to Dhuhr for widget display
-          widgetNextPrayer = Prayer.dhuhr;
-          widgetNextPrayerTime = prayerTimes.dhuhr;
+        // Handle case where next prayer is tomorrow's Fajr (after Isha)
+        if (nextPrayer == Prayer.none) {
+          nextPrayer = Prayer.fajr;
+          // Calculate tomorrow's prayer times
+          final tomorrow = DateTime.now().add(const Duration(days: 1));
+          final tomorrowParams = settings.calculationMethod.getParameters();
+          tomorrowParams.madhab = settings.madhab;
+          final tomorrowPrayerTimes = PrayerTimes(
+            prayerTimes.coordinates,
+            DateComponents.from(tomorrow),
+            tomorrowParams,
+          );
+          nextPrayerTime = tomorrowPrayerTimes.fajr;
         }
+
+        // Logic for skipping Sunrise if needed (already present but needs to be robust)
+        bool isSunrise = nextPrayer == Prayer.sunrise;
+        if (isSunrise) {
+          nextPrayer = Prayer.dhuhr;
+          nextPrayerTime = prayerTimes.dhuhr;
+        }
+
+        Prayer widgetNextPrayer = nextPrayer;
+        DateTime? widgetNextPrayerTime = nextPrayerTime;
 
         final now = DateTime.now();
         final diff = widgetNextPrayerTime?.difference(now) ?? Duration.zero;
@@ -144,6 +159,28 @@ class _HomePageState extends ConsumerState<HomePage>
         // Get city name for widget
         final cityName = ref.read(cityNameProvider).valueOrNull;
 
+        // Calculate next prayer index
+        int nextPrayerIndex = -1;
+        switch (widgetNextPrayer) {
+          case Prayer.fajr:
+            nextPrayerIndex = 0;
+            break;
+          case Prayer.dhuhr:
+            nextPrayerIndex = 1;
+            break;
+          case Prayer.asr:
+            nextPrayerIndex = 2;
+            break;
+          case Prayer.maghrib:
+            nextPrayerIndex = 3;
+            break;
+          case Prayer.isha:
+            nextPrayerIndex = 4;
+            break;
+          default:
+            nextPrayerIndex = -1;
+        }
+
         WidgetService.updateWidgetData(
           nextPrayerName: _getPrayerName(context, widgetNextPrayer),
           nextPrayerTime: widgetNextPrayerTime != null
@@ -152,11 +189,17 @@ class _HomePageState extends ConsumerState<HomePage>
                     : DateFormat.jm().format(widgetNextPrayerTime))
               : '--:--',
           timeRemaining: formatDuration(diff),
+          nextPrayerTimeMillis:
+              widgetNextPrayerTime?.millisecondsSinceEpoch ?? 0,
+          nextPrayerIndex: nextPrayerIndex,
           prayerNames: prayerNames,
           prayerTimes: prayerTimeStrings,
           prayerTimeMillis: prayerTimeMillis,
           location: cityName,
           isSunrise: isSunrise,
+          sunriseTime: use24h
+              ? DateFormat('HH:mm').format(prayerTimes.sunrise)
+              : DateFormat.jm().format(prayerTimes.sunrise),
         );
       });
     });

@@ -63,7 +63,7 @@ Thumbs.db
 
 # Hive database files
 *.hive
-*.lock
+*.hive.lock
 
 # Environment variables
 .env

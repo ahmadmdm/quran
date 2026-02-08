@@ -17,8 +17,28 @@ import java.util.concurrent.TimeUnit
 class CountdownService : Service() {
 
     private var timer: CountDownTimer? = null
-    private val CHANNEL_ID = "silent_channel"
+    private val CHANNEL_ID = "silent_channel_v2"
     private val NOTIFICATION_ID = 999
+
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val serviceChannel = NotificationChannel(
+                CHANNEL_ID,
+                "إشعارات صامتة",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            serviceChannel.description = "تحديثات العد التنازلي"
+            serviceChannel.setSound(null, null)
+            serviceChannel.enableVibration(false)
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(serviceChannel)
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? {
         return null

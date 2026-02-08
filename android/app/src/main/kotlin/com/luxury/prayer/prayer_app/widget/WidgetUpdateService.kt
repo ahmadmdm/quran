@@ -82,6 +82,33 @@ class WidgetUpdateReceiver : BroadcastReceiver() {
             alarmManager.cancel(pendingIntent)
             Log.d(TAG, "Widget updates cancelled")
         }
+
+        fun checkAndCancelUpdates(context: Context) {
+            val appWidgetManager = AppWidgetManager.getInstance(context)
+            val providers = arrayOf(
+                MinimalWidgetProvider::class.java,
+                SmartCardWidgetProvider::class.java,
+                PremiumClockWidgetProvider::class.java,
+                GlassCardWidgetProvider::class.java,
+                QuranVerseWidgetProvider::class.java,
+                CreativeWidgetProvider::class.java,
+                HijriDateWidgetProvider::class.java
+            )
+            
+            var hasActiveWidgets = false
+            for (provider in providers) {
+                if (appWidgetManager.getAppWidgetIds(ComponentName(context, provider)).isNotEmpty()) {
+                    hasActiveWidgets = true
+                    break
+                }
+            }
+            
+            if (!hasActiveWidgets) {
+                cancelUpdates(context)
+            } else {
+                Log.d(TAG, "Widgets still active, not cancelling updates")
+            }
+        }
         
         // Force immediate update
         fun forceUpdate(context: Context) {
@@ -136,15 +163,12 @@ class WidgetUpdateReceiver : BroadcastReceiver() {
         
         // Update Quran Verse Widget
         updateWidgetProvider(context, appWidgetManager, QuranVerseWidgetProvider::class.java)
+
+        // Update Creative Widget
+        updateWidgetProvider(context, appWidgetManager, CreativeWidgetProvider::class.java)
         
         // Update Hijri Date Widget
-        try {
-            val hijriWidgetClass = Class.forName("com.luxury.prayer.prayer_app.widget.HijriDateWidgetProvider")
-            @Suppress("UNCHECKED_CAST")
-            updateWidgetProvider(context, appWidgetManager, hijriWidgetClass as Class<out BroadcastReceiver>)
-        } catch (e: ClassNotFoundException) {
-            // Widget not yet created
-        }
+        updateWidgetProvider(context, appWidgetManager, HijriDateWidgetProvider::class.java)
         
         Log.d(TAG, "All widgets updated at ${SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())}")
     }
@@ -170,19 +194,48 @@ class WidgetUpdateReceiver : BroadcastReceiver() {
         
         // Get stored prayer times in milliseconds
         var nextPrayerIndex = -1
-        var nextPrayerTime = Long.MAX_VALUE
+        var nextPrayerTime = widgetData.getLong("next_prayer_millis", 0L)
         
         val prayerNames = arrayOf("الفجر", "الشروق", "الظهر", "العصر", "المغرب", "العشاء")
         
-        for (i in 0..5) {
-            val prayerTimeMillis = widgetData.getLong("prayer_time_millis_$i", 0L)
-            if (prayerTimeMillis > currentTime && prayerTimeMillis < nextPrayerTime) {
-                nextPrayerTime = prayerTimeMillis
-                nextPrayerIndex = i
+        // If next_prayer_millis is valid and in the future, use it
+        if (nextPrayerTime > currentTime) {
+            // Find which prayer index this corresponds to
+            // This is a best-effort matching
+            val nextPrayerName = widgetData.getString("next_prayer_name", "")
+            nextPrayerIndex = prayerNames.indexOf(nextPrayerName)
+            
+            // If we couldn't match by name, try to match by time (handling next day Fajr case)
+            if (nextPrayerIndex == -1) {
+                 // Check if it matches any of today's prayer times
+                 for (i in 0..5) {
+                    val prayerTimeMillis = widgetData.getLong("prayer_time_millis_$i", 0L)
+                    if (Math.abs(prayerTimeMillis - nextPrayerTime) < 10000) { // 10 seconds tolerance
+                        nextPrayerIndex = i
+                        break
+                    }
+                }
+                
+                // If still -1, it might be tomorrow's Fajr
+                if (nextPrayerIndex == -1) {
+                    // Assuming if it's not today's prayers, and we have a valid future time, it's likely Fajr
+                    // We can also check the stored next_prayer_index from Flutter
+                    nextPrayerIndex = widgetData.getInt("next_prayer_index", -1)
+                }
+            }
+        } else {
+            // Fallback to finding the next prayer from today's list (only works for same-day prayers)
+            nextPrayerTime = Long.MAX_VALUE
+            for (i in 0..5) {
+                val prayerTimeMillis = widgetData.getLong("prayer_time_millis_$i", 0L)
+                if (prayerTimeMillis > currentTime && prayerTimeMillis < nextPrayerTime) {
+                    nextPrayerTime = prayerTimeMillis
+                    nextPrayerIndex = i
+                }
             }
         }
         
-        if (nextPrayerIndex >= 0) {
+        if (nextPrayerTime != Long.MAX_VALUE && nextPrayerTime > currentTime) {
             val remainingMillis = nextPrayerTime - currentTime
             val hours = TimeUnit.MILLISECONDS.toHours(remainingMillis)
             val minutes = TimeUnit.MILLISECONDS.toMinutes(remainingMillis) % 60

@@ -85,12 +85,12 @@ class NotificationService {
     // Main Azan Channel with custom sound - High importance for Android 13+
     await platform.createNotificationChannel(
       AndroidNotificationChannel(
-        'azan_channel',
+        'azan_channel_v2',
         'إشعارات الأذان',
         description: 'إشعارات وقت الصلاة مع صوت الأذان',
         importance: Importance.max,
         playSound: true,
-        sound: const RawResourceAndroidNotificationSound('azan'),
+        sound: null, // Changed to null (system sound)
         enableVibration: true,
         enableLights: true,
         ledColor: const Color.fromARGB(255, 201, 162, 77),
@@ -103,7 +103,7 @@ class NotificationService {
     // Reminder Channel - For pre-prayer reminders
     await platform.createNotificationChannel(
       const AndroidNotificationChannel(
-        'reminder_channel',
+        'reminder_channel_v2',
         'تذكيرات الصلاة',
         description: 'تذكيرات قبل وقت الصلاة',
         importance: Importance.high,
@@ -116,7 +116,7 @@ class NotificationService {
     // Silent Channel for countdown - Low importance
     await platform.createNotificationChannel(
       const AndroidNotificationChannel(
-        'silent_channel',
+        'silent_channel_v2',
         'إشعارات صامتة',
         description: 'تحديثات العد التنازلي',
         importance: Importance.low,
@@ -129,7 +129,7 @@ class NotificationService {
     // Instant notifications channel
     await platform.createNotificationChannel(
       const AndroidNotificationChannel(
-        'instant_channel',
+        'instant_channel_v2',
         'إشعارات فورية',
         description: 'إشعارات فورية',
         importance: Importance.high,
@@ -141,12 +141,30 @@ class NotificationService {
 
     // Dynamic channels for customization
     final channels = [
-      ('azan_sound_vibrate', 'أذان مع اهتزاز', true, true, 'azan'),
-      ('azan_sound_no_vibrate', 'أذان بدون اهتزاز', true, false, 'azan'),
-      ('system_sound_vibrate', 'صوت النظام مع اهتزاز', true, true, null),
-      ('system_sound_no_vibrate', 'صوت النظام بدون اهتزاز', true, false, null),
-      ('silent_vibrate', 'صامت مع اهتزاز', false, true, null),
-      ('silent_no_vibrate', 'صامت بدون اهتزاز', false, false, null),
+      (
+        'azan_sound_vibrate_v2',
+        'أذان مع اهتزاز',
+        true,
+        true,
+        null,
+      ), // Changed to null (system sound)
+      (
+        'azan_sound_no_vibrate_v2',
+        'أذان بدون اهتزاز',
+        true,
+        false,
+        null,
+      ), // Changed to null (system sound)
+      ('system_sound_vibrate_v2', 'صوت النظام مع اهتزاز', true, true, null),
+      (
+        'system_sound_no_vibrate_v2',
+        'صوت النظام بدون اهتزاز',
+        true,
+        false,
+        null,
+      ),
+      ('silent_vibrate_v2', 'صامت مع اهتزاز', false, true, null),
+      ('silent_no_vibrate_v2', 'صامت بدون اهتزاز', false, false, null),
     ];
 
     for (final channel in channels) {
@@ -342,33 +360,35 @@ class NotificationService {
 
     if (isAzan) {
       if (soundType == 'azan') {
-        channelId = vibrate ? 'azan_sound_vibrate' : 'azan_sound_no_vibrate';
+        channelId = vibrate
+            ? 'azan_sound_vibrate_v2'
+            : 'azan_sound_no_vibrate_v2';
         channelName = 'إشعارات الأذان';
         channelDesc = 'إشعارات وقت الصلاة مع صوت الأذان';
-        sound = const RawResourceAndroidNotificationSound('azan');
+        sound = null; // Use system sound
       } else if (soundType == 'silent') {
-        channelId = vibrate ? 'silent_vibrate' : 'silent_no_vibrate';
+        channelId = vibrate ? 'silent_vibrate_v2' : 'silent_no_vibrate_v2';
         channelName = 'إشعارات صامتة';
         channelDesc = 'إشعارات صامتة';
         playSound = false;
       } else {
         channelId = vibrate
-            ? 'system_sound_vibrate'
-            : 'system_sound_no_vibrate';
+            ? 'system_sound_vibrate_v2'
+            : 'system_sound_no_vibrate_v2';
         channelName = 'إشعارات الصلاة';
         channelDesc = 'إشعارات وقت الصلاة';
         sound = null;
       }
     } else {
       if (soundType == 'silent') {
-        channelId = vibrate ? 'silent_vibrate' : 'silent_no_vibrate';
+        channelId = vibrate ? 'silent_vibrate_v2' : 'silent_no_vibrate_v2';
         channelName = 'تذكيرات صامتة';
         channelDesc = 'تذكيرات صامتة';
         playSound = false;
       } else {
         channelId = vibrate
-            ? 'system_sound_vibrate'
-            : 'system_sound_no_vibrate';
+            ? 'system_sound_vibrate_v2'
+            : 'system_sound_no_vibrate_v2';
         channelName = 'تذكيرات الصلاة';
         channelDesc = 'تذكيرات قبل وقت الصلاة';
         sound = null;
@@ -505,7 +525,7 @@ class NotificationService {
       body,
       NotificationDetails(
         android: AndroidNotificationDetails(
-          'instant_channel',
+          'instant_channel_v2',
           'إشعارات فورية',
           channelDescription: 'إشعارات فورية',
           importance: Importance.high,
@@ -534,7 +554,7 @@ class NotificationService {
       body,
       const NotificationDetails(
         android: AndroidNotificationDetails(
-          'silent_channel',
+          'silent_channel_v2',
           'إشعارات صامتة',
           channelDescription: 'تحديثات العد التنازلي',
           importance: Importance.low,
