@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_clock_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="4dp">
+
+    <ImageView
+        android:id="@+id/iv_background"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:src="@drawable/widget_gradient_bg"
+        android:scaleType="fitXY" />
+
+    <RelativeLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:padding="16dp">
+
+        <!-- Progress Ring Background -->
+        <ProgressBar
+            android:id="@+id/progress_ring_bg"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_centerInParent="true"
+            android:indeterminate="false"
+            android:max="100"
+            android:progress="100"
+            android:progressDrawable="@drawable/circular_progress_bg"
+            android:layout_margin="8dp"/>
+
+        <!-- Progress Ring -->
+        <ProgressBar
+            android:id="@+id/progress_ring"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_centerInParent="true"
+            android:indeterminate="false"
+            android:max="100"
+            android:progress="75"
+            android:progressDrawable="@drawable/circular_progress"
+            android:layout_margin="8dp"/>
+
+        <!-- Center Content -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <!-- Current Time -->
+            <TextClock
+                android:id="@+id/tv_clock_time"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:format12Hour="hh:mm"
+                android:format24Hour="HH:mm"
+                android:textSize="36sp"
+                android:textColor="#C9A24D"
+                android:textStyle="bold"
+                android:fontFamily="sans-serif-medium"
+                android:shadowColor="#40000000"
+                android:shadowDx="2"
+                android:shadowDy="2"
+                android:shadowRadius="4"/>
+
+            <!-- Seconds -->
+            <TextClock
+                android:id="@+id/tv_clock_seconds"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:format12Hour="ss"
+                android:format24Hour="ss"
+                android:textSize="14sp"
+                android:textColor="#88C9A24D"
+                android:layout_marginTop="-4dp"/>
+
+            <!-- Next Prayer Name -->
+            <TextView
+                android:id="@+id/tv_next_prayer_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="الفجر"
+                android:textSize="16sp"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:layout_marginTop="8dp"/>
+
+            <!-- Time Remaining -->
+            <TextView
+                android:id="@+id/tv_time_remaining"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="-02:15"
+                android:textSize="13sp"
+                android:textColor="#99FFFFFF"
+                android:layout_marginTop="2dp"/>
+
+            <!-- Prayer Time -->
+            <TextView
+                android:id="@+id/tv_prayer_time"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="05:30 AM"
+                android:textSize="11sp"
+                android:textColor="#66FFFFFF"
+                android:layout_marginTop="2dp"/>
+
+        </LinearLayout>
+
+    </RelativeLayout>
+
+</FrameLayout>

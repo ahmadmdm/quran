@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Subtle geometric pattern overlay -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:startColor="#10C9A24D"
+                android:endColor="#05C9A24D"
+                android:angle="45"
+                android:type="linear"/>
+            <corners android:radius="28dp"/>
+        </shape>
+    </item>
+</layer-list>

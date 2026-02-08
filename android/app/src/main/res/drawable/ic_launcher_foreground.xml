@@ -1,0 +1,23 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Background Gradient Circle (Gold/Dark Blue theme) -->
+    <path
+        android:fillColor="#1E2A5E"
+        android:pathData="M54,54m-45,0a45,45 0 1,1 90,0a45,45 0 1,1 -90,0" />
+        
+    <!-- Crescent Moon (Gold) -->
+    <path
+        android:fillColor="#D4AF37"
+        android:pathData="M75,25 A35,35 0 1,1 35,85 A30,30 0 1,0 75,25 Z" />
+        
+    <!-- Simple Minaret/Dome silhouette or Star -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M70,35 L75,45 L85,45 L78,52 L80,62 L70,55 L60,62 L62,52 L55,45 L65,45 Z" 
+        android:alpha="0.8"/>
+        
+</vector>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">جنة</string>
+    
+    <!-- Widget Names -->
+    <string name="widget_minimal_name">ويدجت بسيط</string>
+    <string name="widget_smart_card_name">البطاقة الذكية</string>
+    <string name="widget_premium_clock_name">الساعة المميزة</string>
+    <string name="widget_glass_card_name">البطاقة الزجاجية</string>
+    <string name="widget_quran_verse_name">آية قرآنية</string>
+    <string name="widget_hijri_date_name">التاريخ الهجري</string>
+    <string name="widget_creative_name">الويدجت الإبداعي</string>
+    
+    <!-- Widget Descriptions -->
+    <string name="widget_minimal_description">ويدجت بسيط يعرض الصلاة القادمة والوقت المتبقي</string>
+    <string name="widget_smart_card_description">بطاقة ذكية تعرض جميع أوقات الصلاة</string>
+    <string name="widget_premium_clock_description">ساعة مميزة مع العد التنازلي للصلاة</string>
+    <string name="widget_glass_card_description">بطاقة بتصميم زجاجي عصري</string>
+    <string name="widget_quran_verse_description">آية قرآنية يومية متجددة</string>
+    <string name="widget_hijri_date_description">التاريخ الهجري والميلادي مع اسم اليوم</string>
+    <string name="widget_creative_description">ويدجت إبداعي بتصميم فريد</string>
+</resources>

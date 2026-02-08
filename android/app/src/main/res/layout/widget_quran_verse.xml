@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_quran_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="8dp">
+
+    <!-- Background -->
+    <ImageView
+        android:id="@+id/iv_quran_bg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:src="@drawable/widget_quran_bg"
+        android:scaleType="fitXY" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tv_quran_icon"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="📖"
+                android:textSize="18sp" />
+
+            <TextView
+                android:id="@+id/tv_header"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="آية اليوم"
+                android:textSize="14sp"
+                android:textColor="#FFC9A24D"
+                android:textStyle="bold"
+                android:layout_marginStart="8dp"
+                android:fontFamily="sans-serif-medium" />
+
+            <TextView
+                android:id="@+id/tv_refresh"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="↻"
+                android:textSize="18sp"
+                android:textColor="#88FFFFFF"
+                android:padding="4dp" />
+
+        </LinearLayout>
+
+        <!-- Verse -->
+        <TextView
+            android:id="@+id/tv_verse"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:text="بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ"
+            android:textSize="20sp"
+            android:textColor="#FFFFFF"
+            android:gravity="center"
+            android:layout_marginVertical="12dp"
+            android:fontFamily="serif" />
+
+        <!-- Surah Info -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <TextView
+                android:id="@+id/tv_surah_name"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="سورة الفاتحة"
+                android:textSize="12sp"
+                android:textColor="#AAFFFFFF"
+                android:fontFamily="sans-serif-light" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text=" • "
+                android:textSize="12sp"
+                android:textColor="#66FFFFFF" />
+
+            <TextView
+                android:id="@+id/tv_verse_number"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="الآية 1"
+                android:textSize="12sp"
+                android:textColor="#AAFFFFFF"
+                android:fontFamily="sans-serif-light" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+</FrameLayout>
