@@ -88,7 +88,7 @@ class QuranVerseWidgetProvider : AppWidgetProvider() {
         val verse = verses[verseIndex]
         
         // Customization
-        val accentHex = widgetData.getString("widget_accent_color", "#FFC9A24D")
+        val accentHex = getSetting(widgetData, "quran_verse_accent_color", "quran verse_accent_color", "#FFC9A24D")
         val accentColor = try {
             Color.parseColor(accentHex)
         } catch (e: Exception) {
@@ -129,5 +129,16 @@ class QuranVerseWidgetProvider : AppWidgetProvider() {
         } catch (e: Exception) {
             android.util.Log.e("QuranVerseWidget", "Error updating widget: ${e.message}")
         }
+    }
+
+    private fun getSetting(
+        prefs: android.content.SharedPreferences,
+        key: String,
+        legacyKey: String,
+        defaultValue: String
+    ): String {
+        return prefs.getString(key, null)
+            ?: prefs.getString(legacyKey, null)
+            ?: defaultValue
     }
 }

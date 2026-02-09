@@ -38,9 +38,9 @@ class PremiumClockWidgetProvider : AppWidgetProvider() {
             val timeRemaining = calculateTimeRemaining(widgetData)
             
             // Customization
-            val bgHex = widgetData.getString("widget_background_color", "#FF0F1629")
-            val textHex = widgetData.getString("widget_text_color", "#FFFFFFFF")
-            val accentHex = widgetData.getString("widget_accent_color", "#FFC9A24D")
+            val bgHex = getSetting(widgetData, "premium_clock_background_color", "premium clock_background_color", "#FF0F1629")
+            val textHex = getSetting(widgetData, "premium_clock_text_color", "premium clock_text_color", "#FFFFFFFF")
+            val accentHex = getSetting(widgetData, "premium_clock_accent_color", "premium clock_accent_color", "#FFC9A24D")
 
             val bgColor = try {
                 Color.parseColor(bgHex)
@@ -149,5 +149,16 @@ class PremiumClockWidgetProvider : AppWidgetProvider() {
         } else {
             widgetData.getString("time_remaining", "--:--") ?: "--:--"
         }
+    }
+
+    private fun getSetting(
+        prefs: android.content.SharedPreferences,
+        key: String,
+        legacyKey: String,
+        defaultValue: String
+    ): String {
+        return prefs.getString(key, null)
+            ?: prefs.getString(legacyKey, null)
+            ?: defaultValue
     }
 }

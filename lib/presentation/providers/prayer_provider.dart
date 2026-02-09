@@ -8,6 +8,24 @@ part 'prayer_provider.g.dart';
 
 @riverpod
 Future<Position> userLocation(UserLocationRef ref) async {
+  final settings = ref.watch(settingsProvider);
+  if (settings.useManualLocation &&
+      settings.manualLatitude != null &&
+      settings.manualLongitude != null) {
+    return Position(
+      latitude: settings.manualLatitude!,
+      longitude: settings.manualLongitude!,
+      timestamp: DateTime.now(),
+      accuracy: 0,
+      altitude: 0,
+      altitudeAccuracy: 0,
+      heading: 0,
+      headingAccuracy: 0,
+      speed: 0,
+      speedAccuracy: 0,
+    );
+  }
+
   final service = LocationService();
   return await service.determinePosition();
 }
@@ -34,6 +52,13 @@ Future<double> qiblaDirection(QiblaDirectionRef ref) async {
 
 @riverpod
 Future<String?> cityName(CityNameRef ref) async {
+  final settings = ref.watch(settingsProvider);
+  if (settings.useManualLocation &&
+      settings.manualLocationLabel != null &&
+      settings.manualLocationLabel!.trim().isNotEmpty) {
+    return settings.manualLocationLabel;
+  }
+
   final position = await ref.watch(userLocationProvider.future);
   final service = LocationService();
   return await service.getCityName(position);

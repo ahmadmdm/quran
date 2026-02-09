@@ -38,7 +38,7 @@ class GlassCardWidgetProvider : AppWidgetProvider() {
             val timeRemaining = calculateTimeRemaining(widgetData)
             
             // Customization
-            val accentHex = widgetData.getString("widget_accent_color", "#FFC9A24D")
+            val accentHex = getSetting(widgetData, "glass_card_accent_color", "glass card_accent_color", "#FFC9A24D")
             val accentColor = try {
                 Color.parseColor(accentHex)
             } catch (e: Exception) {
@@ -101,5 +101,16 @@ class GlassCardWidgetProvider : AppWidgetProvider() {
         } else {
             widgetData.getString("time_remaining", "--:--") ?: "--:--"
         }
+    }
+
+    private fun getSetting(
+        prefs: android.content.SharedPreferences,
+        key: String,
+        legacyKey: String,
+        defaultValue: String
+    ): String {
+        return prefs.getString(key, null)
+            ?: prefs.getString(legacyKey, null)
+            ?: defaultValue
     }
 }

@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import 'package:adhan/adhan.dart';
 import 'package:hijri/hijri_calendar.dart';
 import 'dart:async';
-import 'dart:math' as math;
 import '../../core/theme/app_theme.dart';
 import '../../core/localization/app_localizations.dart';
 import '../../core/utils/widget_service.dart';
@@ -37,6 +36,7 @@ class _HomePageState extends ConsumerState<HomePage>
   Timer? _timer;
   DateTime _currentTime = DateTime.now();
   late AnimationController _pulseController;
+  bool _showAllFeatureCards = false;
 
   @override
   void initState() {
@@ -76,12 +76,23 @@ class _HomePageState extends ConsumerState<HomePage>
         final notificationService = ref.read(notificationServiceProvider);
 
         // Schedule Notifications
+        final enabledPrayers = <Prayer>{
+          if (settings.fajrNotificationsEnabled) Prayer.fajr,
+          if (settings.dhuhrNotificationsEnabled) Prayer.dhuhr,
+          if (settings.asrNotificationsEnabled) Prayer.asr,
+          if (settings.maghribNotificationsEnabled) Prayer.maghrib,
+          if (settings.ishaNotificationsEnabled) Prayer.isha,
+        };
         notificationService.schedulePrayers(
           prayerTimes,
           notificationsEnabled: settings.areNotificationsEnabled,
+          prayerTimeNotificationsEnabled:
+              settings.prayerTimeNotificationsEnabled,
+          prePrayerRemindersEnabled: settings.prePrayerRemindersEnabled,
           preAzanReminderOffset: settings.preAzanReminderOffset,
           notificationSound: settings.notificationSound,
           vibrationEnabled: settings.vibrationEnabled,
+          enabledPrayers: enabledPrayers,
         );
 
         // Update Widget Data
@@ -256,17 +267,39 @@ class _HomePageState extends ConsumerState<HomePage>
   }
 
   Widget _buildMainContent(BuildContext context, PrayerTimes prayerTimes) {
-    final next = prayerTimes.nextPrayer();
-    final nextTime = prayerTimes.timeForPrayer(next);
+    final settings = ref.watch(settingsProvider);
+    final resolvedNext = _resolveNextPrayer(prayerTimes, settings);
+    final next = resolvedNext.$1;
+    final nextTime = resolvedNext.$2;
     final localizations = AppLocalizations.of(context)!;
-    final use24h = ref.watch(settingsProvider).use24hFormat;
+    final use24h = settings.use24hFormat;
+    final showAllFeatures =
+        settings.alwaysShowHomeCards || _showAllFeatureCards;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final maxContentWidth = screenWidth >= 1200
+        ? 980.0
+        : (screenWidth >= 900 ? 860.0 : double.infinity);
+    final centeredInset =
+        maxContentWidth.isFinite && screenWidth > maxContentWidth
+        ? (screenWidth - maxContentWidth) / 2
+        : 0.0;
+    final horizontalPadding = 20.0 + centeredInset;
+    final gridColumns = screenWidth >= 1200 ? 4 : (screenWidth >= 900 ? 3 : 2);
+    final childAspectRatio = screenWidth >= 1200
+        ? 1.25
+        : (screenWidth >= 900 ? 1.18 : 1.1);
 
     return CustomScrollView(
       slivers: [
         // App Bar
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              16,
+              horizontalPadding,
+              0,
+            ),
             child: _buildHeader(context),
           ),
         ),
@@ -274,7 +307,12 @@ class _HomePageState extends ConsumerState<HomePage>
         // Hero Card: Next Prayer
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              20,
+              horizontalPadding,
+              0,
+            ),
             child: _buildHeroCard(
               context,
               next,
@@ -288,7 +326,12 @@ class _HomePageState extends ConsumerState<HomePage>
         // Prayer Times Card (Below Hero)
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+            padding: EdgeInsets.fromLTRB(
+              horizontalPadding,
+              16,
+              horizontalPadding,
+              0,
+            ),
             child: _buildPrayerTimesCard(
               context,
               prayerTimes,
@@ -298,15 +341,47 @@ class _HomePageState extends ConsumerState<HomePage>
           ),
         ),
 
+        if (!settings.alwaysShowHomeCards)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                12,
+                horizontalPadding,
+                0,
+              ),
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _showAllFeatureCards = !_showAllFeatureCards;
+                  });
+                },
+                icon: Icon(
+                  showAllFeatures ? Icons.expand_less : Icons.expand_more,
+                ),
+                label: Text(
+                  showAllFeatures
+                      ? 'إخفاء الخيارات الإضافية'
+                      : 'إظهار باقي الخيارات',
+                ),
+              ),
+            ),
+          ),
+
         // Features Grid
         SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            20,
+            horizontalPadding,
+            20,
+          ),
           sliver: SliverGrid(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: gridColumns,
               mainAxisSpacing: 16,
               crossAxisSpacing: 16,
-              childAspectRatio: 1.1,
+              childAspectRatio: childAspectRatio,
             ),
             delegate: SliverChildListDelegate([
               _buildFeatureCard(
@@ -357,103 +432,111 @@ class _HomePageState extends ConsumerState<HomePage>
                   MaterialPageRoute(builder: (_) => const TasbihPage()),
                 ),
               ),
-              _buildFeatureCard(
-                context,
-                title: localizations.translate('calendar'),
-                icon: Icons.calendar_month_rounded,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF8E44AD), Color(0xFF9B59B6)],
-                ),
-                subtitle: HijriCalendar.now().toFormat("dd MMMM"),
-                onTap: () => Navigator.push(
+              if (showAllFeatures) ...[
+                _buildFeatureCard(
                   context,
-                  MaterialPageRoute(builder: (_) => const CalendarPage()),
+                  title: localizations.translate('calendar'),
+                  icon: Icons.calendar_month_rounded,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF8E44AD), Color(0xFF9B59B6)],
+                  ),
+                  subtitle: HijriCalendar.now().toFormat("dd MMMM"),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const CalendarPage()),
+                  ),
                 ),
-              ),
-              _buildFeatureCard(
-                context,
-                title: localizations.translate('names_of_allah'),
-                icon: Icons.star_rounded,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF6C3483), Color(0xFF8E44AD)],
-                ),
-                onTap: () => Navigator.push(
+                _buildFeatureCard(
                   context,
-                  MaterialPageRoute(builder: (_) => const NamesOfAllahPage()),
+                  title: localizations.translate('names_of_allah'),
+                  icon: Icons.star_rounded,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF6C3483), Color(0xFF8E44AD)],
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const NamesOfAllahPage()),
+                  ),
                 ),
-              ),
-              _buildFeatureCard(
-                context,
-                title: localizations.translate('dua'),
-                icon: Icons.volunteer_activism_rounded,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFE74C3C), Color(0xFFC0392B)],
-                ),
-                onTap: () => Navigator.push(
+                _buildFeatureCard(
                   context,
-                  MaterialPageRoute(builder: (_) => const DuaPage()),
+                  title: localizations.translate('dua'),
+                  icon: Icons.volunteer_activism_rounded,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFE74C3C), Color(0xFFC0392B)],
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const DuaPage()),
+                  ),
                 ),
-              ),
-              _buildFeatureCard(
-                context,
-                title: localizations.translate('prayer_tracker'),
-                icon: Icons.check_circle_rounded,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF27AE60), Color(0xFF2ECC71)],
-                ),
-                onTap: () => Navigator.push(
+                _buildFeatureCard(
                   context,
-                  MaterialPageRoute(builder: (_) => const PrayerTrackerPage()),
+                  title: localizations.translate('prayer_tracker'),
+                  icon: Icons.check_circle_rounded,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF27AE60), Color(0xFF2ECC71)],
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const PrayerTrackerPage(),
+                    ),
+                  ),
                 ),
-              ),
-              _buildFeatureCard(
-                context,
-                title: localizations.translate('qibla_map'),
-                icon: Icons.map_rounded,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF34495E), Color(0xFF2C3E50)],
-                ),
-                onTap: () => Navigator.push(
+                _buildFeatureCard(
                   context,
-                  MaterialPageRoute(builder: (_) => const QiblaMapPage()),
+                  title: localizations.translate('qibla_map'),
+                  icon: Icons.map_rounded,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF34495E), Color(0xFF2C3E50)],
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const QiblaMapPage()),
+                  ),
                 ),
-              ),
-              _buildFeatureCard(
-                context,
-                title: localizations.translate('zakat_calculator'),
-                icon: Icons.calculate_rounded,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFD35400), Color(0xFFE67E22)],
-                ),
-                onTap: () => Navigator.push(
+                _buildFeatureCard(
                   context,
-                  MaterialPageRoute(builder: (_) => const ZakatPage()),
+                  title: localizations.translate('zakat_calculator'),
+                  icon: Icons.calculate_rounded,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFFD35400), Color(0xFFE67E22)],
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ZakatPage()),
+                  ),
                 ),
-              ),
-              _buildFeatureCard(
-                context,
-                title: localizations.translate('missed_prayers'),
-                icon: Icons.history_rounded,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF7F8C8D), Color(0xFF95A5A6)],
-                ),
-                onTap: () => Navigator.push(
+                _buildFeatureCard(
                   context,
-                  MaterialPageRoute(builder: (_) => const MissedPrayersPage()),
+                  title: localizations.translate('missed_prayers'),
+                  icon: Icons.history_rounded,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF7F8C8D), Color(0xFF95A5A6)],
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const MissedPrayersPage(),
+                    ),
+                  ),
                 ),
-              ),
-              _buildFeatureCard(
-                context,
-                title: localizations.translate('islamic_events'),
-                icon: Icons.event_rounded,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF16A085), Color(0xFF1ABC9C)],
-                ),
-                onTap: () => Navigator.push(
+                _buildFeatureCard(
                   context,
-                  MaterialPageRoute(builder: (_) => const IslamicEventsPage()),
+                  title: localizations.translate('islamic_events'),
+                  icon: Icons.event_rounded,
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF16A085), Color(0xFF1ABC9C)],
+                  ),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const IslamicEventsPage(),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ]),
           ),
         ),
@@ -462,7 +545,6 @@ class _HomePageState extends ConsumerState<HomePage>
   }
 
   Widget _buildHeader(BuildContext context) {
-    final localizations = AppLocalizations.of(context)!;
     final settings = ref.watch(settingsProvider);
     final hijriToday = HijriCalendar.now().toFormat("dd MMMM yyyy");
     final cityAsync = ref.watch(cityNameProvider);
@@ -540,10 +622,35 @@ class _HomePageState extends ConsumerState<HomePage>
                   : Icons.notifications_off,
               tooltip: 'الإشعارات',
               isActive: settings.areNotificationsEnabled,
-              onPressed: () {
-                ref
+              onPressed: () async {
+                final nextValue = !settings.areNotificationsEnabled;
+                await ref
                     .read(settingsProvider.notifier)
-                    .setNotificationsEnabled(!settings.areNotificationsEnabled);
+                    .setNotificationsEnabled(nextValue);
+                final prayerTimes = ref.read(prayerTimesProvider).value;
+                if (prayerTimes != null) {
+                  final enabledPrayers = <Prayer>{
+                    if (settings.fajrNotificationsEnabled) Prayer.fajr,
+                    if (settings.dhuhrNotificationsEnabled) Prayer.dhuhr,
+                    if (settings.asrNotificationsEnabled) Prayer.asr,
+                    if (settings.maghribNotificationsEnabled) Prayer.maghrib,
+                    if (settings.ishaNotificationsEnabled) Prayer.isha,
+                  };
+                  await ref
+                      .read(notificationServiceProvider)
+                      .schedulePrayers(
+                        prayerTimes,
+                        notificationsEnabled: nextValue,
+                        prayerTimeNotificationsEnabled:
+                            settings.prayerTimeNotificationsEnabled,
+                        prePrayerRemindersEnabled:
+                            settings.prePrayerRemindersEnabled,
+                        preAzanReminderOffset: settings.preAzanReminderOffset,
+                        notificationSound: settings.notificationSound,
+                        vibrationEnabled: settings.vibrationEnabled,
+                        enabledPrayers: enabledPrayers,
+                      );
+                }
               },
             ),
             _buildHeaderButton(
@@ -747,6 +854,32 @@ class _HomePageState extends ConsumerState<HomePage>
         ],
       ),
     );
+  }
+
+  (Prayer, DateTime?) _resolveNextPrayer(
+    PrayerTimes prayerTimes,
+    SettingsState settings,
+  ) {
+    Prayer nextPrayer = prayerTimes.nextPrayer();
+    DateTime? nextPrayerTime = prayerTimes.timeForPrayer(nextPrayer);
+
+    if (nextPrayer == Prayer.none || nextPrayerTime == null) {
+      final tomorrow = DateTime.now().add(const Duration(days: 1));
+      final params = settings.calculationMethod.getParameters();
+      params.madhab = settings.madhab;
+      final tomorrowTimes = PrayerTimes(
+        prayerTimes.coordinates,
+        DateComponents.from(tomorrow),
+        params,
+      );
+      return (Prayer.fajr, tomorrowTimes.fajr);
+    }
+
+    if (nextPrayer == Prayer.sunrise) {
+      return (Prayer.dhuhr, prayerTimes.dhuhr);
+    }
+
+    return (nextPrayer, nextPrayerTime);
   }
 
   Widget _buildPrayerTimesCard(
@@ -1091,7 +1224,6 @@ class _HomePageState extends ConsumerState<HomePage>
       case Prayer.isha:
         return localizations.translate('isha');
       case Prayer.none:
-      default:
         return localizations.translate('none');
     }
   }

@@ -41,9 +41,9 @@ class MinimalWidgetProvider : AppWidgetProvider() {
                 val timeRemaining = calculateTimeRemaining(widgetData)
                 
                 // Customization
-                val bgHex = widgetData.getString("widget_background_color", "#FF0F1629")
-                val textHex = widgetData.getString("widget_text_color", "#FFFFFFFF")
-                val accentHex = widgetData.getString("widget_accent_color", "#FFC9A24D")
+                val bgHex = widgetData.getString("minimal_background_color", "#FF0F1629")
+                val textHex = widgetData.getString("minimal_text_color", "#FFFFFFFF")
+                val accentHex = widgetData.getString("minimal_accent_color", "#FFC9A24D")
                 
                 val bgColor = try {
                     Color.parseColor(bgHex)

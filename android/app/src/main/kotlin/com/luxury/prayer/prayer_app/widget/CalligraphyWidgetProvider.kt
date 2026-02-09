@@ -5,6 +5,7 @@ import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import android.widget.RemoteViews
 import com.luxury.prayer.prayer_app.MainActivity
 import com.luxury.prayer.prayer_app.R
@@ -20,8 +21,8 @@ class CalligraphyWidgetProvider : AppWidgetProvider() {
 
     companion object {
         private val ARABIC_DAYS = arrayOf(
-            "الأحد", "الإثنين", "الثلاثاء", "الأربعاء",
-            "الخميس", "الجمعة", "السبت"
+            "الأَحَد", "الاثْنَيْن", "الثُّلَاثَاء", "الأَرْبِعَاء",
+            "الخَمِيس", "الجُمُعَة", "السَّبْت"
         )
         
         private val HIJRI_MONTHS = arrayOf(
@@ -59,14 +60,16 @@ class CalligraphyWidgetProvider : AppWidgetProvider() {
         val widgetData = HomeWidgetPlugin.getData(context)
         val views = RemoteViews(context.packageName, R.layout.widget_calligraphy)
 
-        // Customization - Load specific keys first, fall back to global if not found
-        // Note: Flutter saves as "calligraphy_..." now.
-        // We check "calligraphy_..." keys.
-        val bgHex = widgetData.getString("calligraphy_background_color", 
-            widgetData.getString("widget_background_color", "#FF0F1629"))
-        val textHex = widgetData.getString("calligraphy_text_color", 
-            widgetData.getString("widget_text_color", "#FFFFFFFF"))
+        // Customization
+        // We strictly use calligraphy_ prefix to ensure per-widget isolation
+        val bgHex = widgetData.getString("calligraphy_background_color", "#FF0F1629")
+        val textHex = widgetData.getString("calligraphy_text_color", "#FFFFFFFF")
         val fontStyle = widgetData.getString("calligraphy_font_style", "default") ?: "default"
+        val preferredFontSize = try {
+            widgetData.getFloat("calligraphy_font_size", 56f)
+        } catch (_: Exception) {
+            widgetData.getString("calligraphy_font_size", "56")?.toFloatOrNull() ?: 56f
+        }
         
         val bgColor = try {
             Color.parseColor(bgHex)
@@ -94,7 +97,18 @@ class CalligraphyWidgetProvider : AppWidgetProvider() {
         val dayName = ARABIC_DAYS[dayOfWeek]
         
         // Render Day Name to Bitmap with Custom Font
-        val bitmap = createBitmapFromText(context, dayName, fontStyle, textColor)
+        val options: Bundle = appWidgetManager.getAppWidgetOptions(appWidgetId)
+        val minWidth = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 120)
+        val minHeight = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 120)
+        val bitmap = createBitmapFromText(
+            context = context,
+            text = dayName,
+            fontStyle = fontStyle,
+            color = textColor,
+            preferredFontSize = preferredFontSize,
+            minWidthDp = minWidth,
+            minHeightDp = minHeight
+        )
         views.setImageViewBitmap(R.id.iv_day_name, bitmap)
         // Hide TextView if we are using ImageView (we need to update layout to have both or switch visibility)
         // For now, assuming we will replace TextView with ImageView in XML or use existing one.
@@ -150,18 +164,42 @@ class CalligraphyWidgetProvider : AppWidgetProvider() {
     // The user requested "creative fonts", so we map to available system styles.
     // Ideally, we would render text to Bitmap if we had the font files.
     
-    private fun createBitmapFromText(context: Context, text: String, fontStyle: String, color: Int): Bitmap {
+    private fun createBitmapFromText(
+        context: Context,
+        text: String,
+        fontStyle: String,
+        color: Int,
+        preferredFontSize: Float,
+        minWidthDp: Int,
+        minHeightDp: Int
+    ): Bitmap {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        paint.textSize = 200f // Large size for high quality
+        val scaleFactor = when {
+            minWidthDp >= 220 || minHeightDp >= 220 -> 1.35f
+            minWidthDp >= 170 || minHeightDp >= 170 -> 1.15f
+            minWidthDp <= 110 || minHeightDp <= 110 -> 0.85f
+            else -> 1.0f
+        }
+        paint.textSize = (preferredFontSize * scaleFactor).coerceIn(34f, 96f)
         paint.color = color
         paint.textAlign = Paint.Align.CENTER
 
-        // Select Typeface
-        val typeface = when (fontStyle) {
-            "serif" -> Typeface.create(Typeface.SERIF, Typeface.BOLD)
-            "monospace" -> Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-            "cursive" -> Typeface.create(Typeface.SANS_SERIF, Typeface.ITALIC) // Fallback as standard cursive not reliable
-            else -> Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        // Select Typeface with Asset Support
+        val typeface = try {
+            when (fontStyle) {
+                "serif" -> Typeface.createFromAsset(context.assets, "fonts/amiri.ttf")
+                "monospace" -> Typeface.createFromAsset(context.assets, "fonts/kufi.ttf")
+                "cursive" -> Typeface.createFromAsset(context.assets, "fonts/ruqaa.ttf")
+                else -> Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            }
+        } catch (e: Exception) {
+            // Fallback to system fonts if assets missing
+            when (fontStyle) {
+                "serif" -> Typeface.create(Typeface.SERIF, Typeface.BOLD)
+                "monospace" -> Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+                "cursive" -> Typeface.create(Typeface.SANS_SERIF, Typeface.ITALIC) // Fallback
+                else -> Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            }
         }
         paint.typeface = typeface
 

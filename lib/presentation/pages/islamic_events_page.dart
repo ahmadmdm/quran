@@ -33,42 +33,40 @@ class IslamicEventsPage extends StatelessWidget {
     final now = HijriCalendar.now();
     final currentYear = now.hYear;
 
-    // Simple static list for demonstration
-    // In a real app, logic would calculate exact Gregorian dates for these Hijri dates
     return [
       {
-        'title': 'Ramadan',
-        'hijri_date': '1 Ramadan',
+        'title': 'بداية شهر رمضان',
+        'hijri_date': '١ رمضان',
         'year': currentYear,
         'days_left': _calculateDaysLeft(9, 1),
       },
       {
-        'title': 'Eid al-Fitr',
-        'hijri_date': '1 Shawwal',
+        'title': 'عيد الفطر',
+        'hijri_date': '١ شوال',
         'year': currentYear,
         'days_left': _calculateDaysLeft(10, 1),
       },
       {
-        'title': 'Arafah',
-        'hijri_date': '9 Dhu al-Hijjah',
+        'title': 'يوم عرفة',
+        'hijri_date': '٩ ذو الحجة',
         'year': currentYear,
         'days_left': _calculateDaysLeft(12, 9),
       },
       {
-        'title': 'Eid al-Adha',
-        'hijri_date': '10 Dhu al-Hijjah',
+        'title': 'عيد الأضحى',
+        'hijri_date': '١٠ ذو الحجة',
         'year': currentYear,
         'days_left': _calculateDaysLeft(12, 10),
       },
       {
-        'title': 'Islamic New Year',
-        'hijri_date': '1 Muharram',
+        'title': 'رأس السنة الهجرية',
+        'hijri_date': '١ محرم',
         'year': currentYear + 1,
         'days_left': _calculateDaysLeft(1, 1, nextYear: true),
       },
       {
-        'title': 'Ashura',
-        'hijri_date': '10 Muharram',
+        'title': 'يوم عاشوراء',
+        'hijri_date': '١٠ محرم',
         'year': currentYear + 1,
         'days_left': _calculateDaysLeft(1, 10, nextYear: true),
       },
@@ -144,7 +142,7 @@ class IslamicEventsPage extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'Days',
+                  'يوم',
                   style: TextStyle(
                     fontSize: 10,
                     color: Theme.of(

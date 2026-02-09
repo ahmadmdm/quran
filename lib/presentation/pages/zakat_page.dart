@@ -15,17 +15,24 @@ class _ZakatPageState extends State<ZakatPage> {
 
   double _zakatDue = 0;
   bool _isEligible = false;
+  bool _hasCalculated = false;
   // Approximate value of 85g of Gold (Nisab) in USD, this should ideally be fetched from API
   final double _nisabThreshold = 5500.0;
 
-  void _calculateZakat() {
-    final assets = double.tryParse(_assetsController.text) ?? 0;
-    final gold = double.tryParse(_goldController.text) ?? 0;
-    final liabilities = double.tryParse(_liabilitiesController.text) ?? 0;
+  double _parseNumber(String value) {
+    final normalized = value.replaceAll(',', '').trim();
+    return double.tryParse(normalized) ?? 0;
+  }
 
-    final netWorth = assets + gold - liabilities;
+  void _calculateZakat() {
+    final assets = _parseNumber(_assetsController.text);
+    final gold = _parseNumber(_goldController.text);
+    final liabilities = _parseNumber(_liabilitiesController.text);
+
+    final netWorth = (assets + gold - liabilities).clamp(0, double.infinity);
 
     setState(() {
+      _hasCalculated = true;
       if (netWorth >= _nisabThreshold) {
         _zakatDue = netWorth * 0.025;
         _isEligible = true;
@@ -102,7 +109,7 @@ class _ZakatPageState extends State<ZakatPage> {
               ),
             ),
             const SizedBox(height: 30),
-            if (_zakatDue > 0 || _isEligible == false)
+            if (_hasCalculated)
               _buildResultCard(localizations),
           ],
         ),

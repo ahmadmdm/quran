@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:hijri/hijri_calendar.dart';
 import 'package:geolocator/geolocator.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/pages/home_page.dart';
@@ -68,11 +67,51 @@ class PrayerApp extends ConsumerWidget {
       ],
       builder: (context, child) {
         final media = MediaQuery.of(context);
+        final textDirection =
+            Directionality.maybeOf(context) ??
+            (locale.languageCode == 'ar'
+                ? TextDirection.rtl
+                : TextDirection.ltr);
+
+        Object? verticalHinge;
+        for (final feature in media.displayFeatures) {
+          final featureType = feature.type.toString().toLowerCase();
+          final isVerticalHinge =
+              featureType.contains('hinge') &&
+              feature.bounds.width > 0 &&
+              feature.bounds.height >= media.size.height * 0.5;
+          if (isVerticalHinge) {
+            verticalHinge = feature;
+            break;
+          }
+        }
+
+        Widget resolvedChild = child ?? const SizedBox.shrink();
+        if (verticalHinge != null) {
+          final hinge = (verticalHinge as dynamic).bounds as Rect;
+          final useRightPane = textDirection == TextDirection.rtl;
+          final leftPaneWidth = hinge.left;
+          final rightPaneWidth = media.size.width - hinge.right;
+          final paneWidth = useRightPane ? rightPaneWidth : leftPaneWidth;
+
+          if (paneWidth > 0) {
+            resolvedChild = Align(
+              alignment: useRightPane ? Alignment.topRight : Alignment.topLeft,
+              child: Padding(
+                padding: useRightPane
+                    ? EdgeInsets.only(left: hinge.right)
+                    : EdgeInsets.only(right: media.size.width - hinge.left),
+                child: SizedBox(width: paneWidth, child: resolvedChild),
+              ),
+            );
+          }
+        }
+
         return MediaQuery(
           data: media.copyWith(
             textScaler: TextScaler.linear(largeText ? 1.15 : 1.0),
           ),
-          child: child ?? const SizedBox.shrink(),
+          child: resolvedChild,
         );
       },
       home: const HomePage(),

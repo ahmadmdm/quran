@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:adhan/adhan.dart';
-import '../../core/theme/app_theme.dart';
 import '../../core/localization/app_localizations.dart';
 import '../../core/utils/location_service.dart';
 import '../providers/locale_provider.dart';
@@ -48,9 +47,7 @@ class SettingsPage extends ConsumerWidget {
           _buildSettingsTile(
             context,
             icon: Icons.widgets,
-            title:
-                localizations.translate('widget_customization') ??
-                'Widget Customization',
+            title: localizations.translate('widget_customization'),
             subtitle: 'Customize home screen widgets',
             onTap: () {
               Navigator.push(
@@ -65,7 +62,9 @@ class SettingsPage extends ConsumerWidget {
             context,
             icon: Icons.location_on,
             title: localizations.translate('location'),
-            subtitle: localizations.translate('auto_detect'),
+            subtitle: settings.useManualLocation
+                ? 'يدوي: ${settings.manualLocationLabel ?? '${settings.manualLatitude?.toStringAsFixed(4)}, ${settings.manualLongitude?.toStringAsFixed(4)}'}'
+                : localizations.translate('auto_detect'),
             onTap: () => _handleLocationTap(context, ref, localizations),
           ),
           _buildSettingsTile(
@@ -104,9 +103,7 @@ class SettingsPage extends ConsumerWidget {
             _buildSettingsTile(
               context,
               icon: Icons.music_note,
-              title:
-                  localizations.translate('notification_sound') ??
-                  'Notification Sound',
+              title: localizations.translate('notification_sound'),
               subtitle: _getSoundName(settings.notificationSound),
               onTap: () =>
                   _handleSoundTap(context, ref, settings, localizations),
@@ -114,13 +111,11 @@ class SettingsPage extends ConsumerWidget {
             _buildSettingsTile(
               context,
               icon: Icons.vibration,
-              title: localizations.translate('vibration') ?? 'Vibration',
+              title: localizations.translate('vibration'),
               subtitle: settings.vibrationEnabled
                   ? localizations.translate('enabled')
                   : localizations.translate('disabled'),
-              onTap: () => ref
-                  .read(settingsProvider.notifier)
-                  .setVibrationEnabled(!settings.vibrationEnabled),
+              onTap: () => _handleVibrationToggle(context, ref, settings),
             ),
           ],
 
@@ -175,6 +170,17 @@ class SettingsPage extends ConsumerWidget {
                 : localizations.translate('disabled'),
             onTap: () =>
                 _handleLargeTextTap(context, ref, settings, localizations),
+          ),
+          _buildSettingsTile(
+            context,
+            icon: Icons.dashboard_customize,
+            title: localizations.translate('always_show_home_cards'),
+            subtitle: settings.alwaysShowHomeCards
+                ? localizations.translate('enabled')
+                : localizations.translate('disabled'),
+            onTap: () => ref
+                .read(settingsProvider.notifier)
+                .setAlwaysShowHomeCards(!settings.alwaysShowHomeCards),
           ),
         ],
       ),
@@ -265,28 +271,42 @@ class SettingsPage extends ConsumerWidget {
     WidgetRef ref,
     AppLocalizations localizations,
   ) async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${localizations.translate('auto_detect')}...')),
-    );
-    try {
-      ref.invalidate(userLocationProvider);
-      final position = await ref.read(userLocationProvider.future);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Location updated: ${position.latitude.toStringAsFixed(2)}, ${position.longitude.toStringAsFixed(2)}',
+    final settings = ref.read(settingsProvider);
+    showModalBottomSheet(
+      context: context,
+      builder: (bottomSheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.gps_fixed),
+              title: Text(localizations.translate('auto_detect')),
+              subtitle: const Text('استخدام GPS تلقائيًا'),
+              onTap: () async {
+                Navigator.pop(bottomSheetContext);
+                await ref.read(settingsProvider.notifier).setUseAutoLocation();
+                ref.invalidate(userLocationProvider);
+                ref.invalidate(cityNameProvider);
+                ref.invalidate(prayerTimesProvider);
+              },
             ),
-          ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
-    }
+            ListTile(
+              leading: const Icon(Icons.edit_location_alt),
+              title: const Text('اختيار يدوي'),
+              subtitle: Text(
+                settings.useManualLocation
+                    ? (settings.manualLocationLabel ?? 'مفعل حاليًا')
+                    : 'أدخل خط العرض والطول يدويًا',
+              ),
+              onTap: () {
+                Navigator.pop(bottomSheetContext);
+                _showManualLocationDialog(context, ref);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _handleGpsAccuracyTap(
@@ -343,21 +363,134 @@ class SettingsPage extends ConsumerWidget {
     SettingsState settings,
     AppLocalizations localizations,
   ) {
-    // Immediate toggle logic
-    final newValue = !settings.areNotificationsEnabled;
-    ref.read(settingsProvider.notifier).setNotificationsEnabled(newValue);
-
-    // Re-schedule notifications immediately
-    final prayerTimes = ref.read(prayerTimesProvider).value;
-    if (prayerTimes != null) {
-      ref
-          .read(notificationServiceProvider)
-          .schedulePrayers(
-            prayerTimes,
-            notificationsEnabled: newValue,
-            preAzanReminderOffset: settings.preAzanReminderOffset,
-          );
-    }
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (bottomSheetContext) {
+        final currentSettings = ref.watch(settingsProvider);
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: MediaQuery.of(bottomSheetContext).viewInsets.bottom + 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SwitchListTile(
+                title: Text(localizations.translate('notifications')),
+                value: currentSettings.areNotificationsEnabled,
+                onChanged: (_) async {
+                  await _handleNotificationToggle(context, ref);
+                },
+              ),
+              SwitchListTile(
+                title: Text(localizations.translate('notification_prayer_time')),
+                subtitle: const Text('تنبيه عند دخول وقت الصلاة'),
+                value: currentSettings.prayerTimeNotificationsEnabled,
+                onChanged: (value) async {
+                  await ref
+                      .read(settingsProvider.notifier)
+                      .setPrayerTimeNotificationsEnabled(value);
+                  await _applyNotificationSettings(ref);
+                },
+              ),
+              SwitchListTile(
+                title: Text(localizations.translate('notification_pre_prayer')),
+                subtitle: const Text('تنبيه قبل الأذان حسب المدة المحددة'),
+                value: currentSettings.prePrayerRemindersEnabled,
+                onChanged: (value) async {
+                  await ref
+                      .read(settingsProvider.notifier)
+                      .setPrePrayerRemindersEnabled(value);
+                  await _applyNotificationSettings(ref);
+                },
+              ),
+              const SizedBox(height: 8),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: SizedBox.shrink(),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    localizations.translate('notification_per_prayer'),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              SwitchListTile(
+                dense: true,
+                title: const Text('الفجر'),
+                value: currentSettings.fajrNotificationsEnabled,
+                onChanged: (value) =>
+                    _togglePrayerNotification(ref, Prayer.fajr, value),
+              ),
+              SwitchListTile(
+                dense: true,
+                title: const Text('الظهر'),
+                value: currentSettings.dhuhrNotificationsEnabled,
+                onChanged: (value) =>
+                    _togglePrayerNotification(ref, Prayer.dhuhr, value),
+              ),
+              SwitchListTile(
+                dense: true,
+                title: const Text('العصر'),
+                value: currentSettings.asrNotificationsEnabled,
+                onChanged: (value) =>
+                    _togglePrayerNotification(ref, Prayer.asr, value),
+              ),
+              SwitchListTile(
+                dense: true,
+                title: const Text('المغرب'),
+                value: currentSettings.maghribNotificationsEnabled,
+                onChanged: (value) =>
+                    _togglePrayerNotification(ref, Prayer.maghrib, value),
+              ),
+              SwitchListTile(
+                dense: true,
+                title: const Text('العشاء'),
+                value: currentSettings.ishaNotificationsEnabled,
+                onChanged: (value) =>
+                    _togglePrayerNotification(ref, Prayer.isha, value),
+              ),
+              ListTile(
+                leading: const Icon(Icons.tune),
+                title: const Text('إعدادات النظام للإشعارات'),
+                subtitle: const Text(
+                  'فتح إعدادات التطبيق للتحقق من السماح بالإشعارات',
+                ),
+                onTap: () async {
+                  await ref
+                      .read(notificationServiceProvider)
+                      .openAppNotificationSettings();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.alarm_on),
+                title: const Text('تفعيل جدولة دقيقة'),
+                subtitle: const Text('طلب أذونات التنبيه والبطارية'),
+                onTap: () async {
+                  await ref
+                      .read(notificationServiceProvider)
+                      .requestCriticalAlarmPermissions();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('تم إرسال طلب الأذونات المطلوبة'),
+                      ),
+                    );
+                  }
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   void _handlePreAzanDurationTap(
@@ -386,18 +519,7 @@ class SettingsPage extends ConsumerWidget {
                         .read(settingsProvider.notifier)
                         .setPreAzanReminderOffset(value);
                     Navigator.pop(context);
-
-                    // Re-schedule with new offset
-                    final prayerTimes = ref.read(prayerTimesProvider).value;
-                    if (prayerTimes != null) {
-                      ref
-                          .read(notificationServiceProvider)
-                          .schedulePrayers(
-                            prayerTimes,
-                            notificationsEnabled: true,
-                            preAzanReminderOffset: value,
-                          );
-                    }
+                    _applyNotificationSettings(ref);
                   }
                 },
               );
@@ -593,6 +715,147 @@ class SettingsPage extends ConsumerWidget {
     }
   }
 
+  Future<void> _applyNotificationSettings(WidgetRef ref) async {
+    final settings = ref.read(settingsProvider);
+    final prayerTimes = ref.read(prayerTimesProvider).value;
+    if (prayerTimes == null) return;
+
+    final enabledPrayers = _enabledPrayersFromSettings(settings);
+
+    await ref
+        .read(notificationServiceProvider)
+        .schedulePrayers(
+          prayerTimes,
+          notificationsEnabled: settings.areNotificationsEnabled,
+          prayerTimeNotificationsEnabled: settings.prayerTimeNotificationsEnabled,
+          prePrayerRemindersEnabled: settings.prePrayerRemindersEnabled,
+          preAzanReminderOffset: settings.preAzanReminderOffset,
+          notificationSound: settings.notificationSound,
+          vibrationEnabled: settings.vibrationEnabled,
+          enabledPrayers: enabledPrayers,
+        );
+  }
+
+  Future<void> _handleNotificationToggle(BuildContext context, WidgetRef ref) async {
+    final settings = ref.read(settingsProvider);
+    await ref
+        .read(settingsProvider.notifier)
+        .setNotificationsEnabled(!settings.areNotificationsEnabled);
+    await _applyNotificationSettings(ref);
+  }
+
+  Future<void> _togglePrayerNotification(
+    WidgetRef ref,
+    Prayer prayer,
+    bool enabled,
+  ) async {
+    await ref
+        .read(settingsProvider.notifier)
+        .setPrayerNotificationEnabled(prayer, enabled);
+    await _applyNotificationSettings(ref);
+  }
+
+  Set<Prayer> _enabledPrayersFromSettings(SettingsState settings) {
+    final enabled = <Prayer>{};
+    if (settings.fajrNotificationsEnabled) enabled.add(Prayer.fajr);
+    if (settings.dhuhrNotificationsEnabled) enabled.add(Prayer.dhuhr);
+    if (settings.asrNotificationsEnabled) enabled.add(Prayer.asr);
+    if (settings.maghribNotificationsEnabled) enabled.add(Prayer.maghrib);
+    if (settings.ishaNotificationsEnabled) enabled.add(Prayer.isha);
+    return enabled;
+  }
+
+  Future<void> _handleVibrationToggle(
+    BuildContext context,
+    WidgetRef ref,
+    SettingsState settings,
+  ) async {
+    await ref
+        .read(settingsProvider.notifier)
+        .setVibrationEnabled(!settings.vibrationEnabled);
+    await _applyNotificationSettings(ref);
+  }
+
+  void _showManualLocationDialog(BuildContext context, WidgetRef ref) {
+    final settings = ref.read(settingsProvider);
+    final latController = TextEditingController(
+      text: settings.manualLatitude?.toString() ?? '',
+    );
+    final lngController = TextEditingController(
+      text: settings.manualLongitude?.toString() ?? '',
+    );
+    final labelController = TextEditingController(
+      text: settings.manualLocationLabel ?? '',
+    );
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('اختيار موقع يدوي'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: latController,
+              keyboardType: const TextInputType.numberWithOptions(
+                signed: true,
+                decimal: true,
+              ),
+              decoration: const InputDecoration(labelText: 'خط العرض'),
+            ),
+            TextField(
+              controller: lngController,
+              keyboardType: const TextInputType.numberWithOptions(
+                signed: true,
+                decimal: true,
+              ),
+              decoration: const InputDecoration(labelText: 'خط الطول'),
+            ),
+            TextField(
+              controller: labelController,
+              decoration: const InputDecoration(
+                labelText: 'اسم المكان (اختياري)',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final lat = double.tryParse(latController.text.trim());
+              final lng = double.tryParse(lngController.text.trim());
+              if (lat == null || lng == null || lat.abs() > 90 || lng.abs() > 180) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('إحداثيات غير صالحة')),
+                );
+                return;
+              }
+
+              await ref
+                  .read(settingsProvider.notifier)
+                  .setManualLocation(
+                    latitude: lat,
+                    longitude: lng,
+                    label: labelController.text.trim(),
+                  );
+              ref.invalidate(userLocationProvider);
+              ref.invalidate(cityNameProvider);
+              ref.invalidate(prayerTimesProvider);
+              if (context.mounted) {
+                Navigator.pop(dialogContext);
+              }
+            },
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _handleSoundTap(
     BuildContext context,
     WidgetRef ref,
@@ -603,13 +866,13 @@ class SettingsPage extends ConsumerWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(
-          localizations.translate('notification_sound') ?? 'Notification Sound',
+          localizations.translate('notification_sound'),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             RadioListTile<String>(
-              title: Text(localizations.translate('azan') ?? 'Azan (Custom)'),
+              title: Text(localizations.translate('azan')),
               value: 'azan',
               groupValue: settings.notificationSound,
               onChanged: (value) {
@@ -617,13 +880,14 @@ class SettingsPage extends ConsumerWidget {
                   ref
                       .read(settingsProvider.notifier)
                       .setNotificationSound(value);
+                  _applyNotificationSettings(ref);
                   Navigator.pop(context);
                 }
               },
             ),
             RadioListTile<String>(
               title: Text(
-                localizations.translate('system_sound') ?? 'System Sound',
+                localizations.translate('system_sound'),
               ),
               value: 'system',
               groupValue: settings.notificationSound,
@@ -632,12 +896,13 @@ class SettingsPage extends ConsumerWidget {
                   ref
                       .read(settingsProvider.notifier)
                       .setNotificationSound(value);
+                  _applyNotificationSettings(ref);
                   Navigator.pop(context);
                 }
               },
             ),
             RadioListTile<String>(
-              title: Text(localizations.translate('silent') ?? 'Silent'),
+              title: Text(localizations.translate('silent')),
               value: 'silent',
               groupValue: settings.notificationSound,
               onChanged: (value) {
@@ -645,6 +910,7 @@ class SettingsPage extends ConsumerWidget {
                   ref
                       .read(settingsProvider.notifier)
                       .setNotificationSound(value);
+                  _applyNotificationSettings(ref);
                   Navigator.pop(context);
                 }
               },

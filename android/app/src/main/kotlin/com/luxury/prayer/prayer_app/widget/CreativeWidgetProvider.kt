@@ -8,6 +8,7 @@ import android.content.Intent
 import android.widget.RemoteViews
 import com.luxury.prayer.prayer_app.MainActivity
 import com.luxury.prayer.prayer_app.R
+import android.graphics.Color
 import es.antonborri.home_widget.HomeWidgetPlugin
 import java.text.SimpleDateFormat
 import java.util.*
@@ -55,6 +56,25 @@ class CreativeWidgetProvider : AppWidgetProvider() {
     ) {
         val views = RemoteViews(context.packageName, R.layout.widget_creative)
         val widgetData = HomeWidgetPlugin.getData(context)
+
+        // Customization
+        val bgHex = widgetData.getString("creative_background_color", "#FF0F1629")
+        val textHex = widgetData.getString("creative_text_color", "#FFFFFFFF")
+        val accentHex = widgetData.getString("creative_accent_color", "#FFC9A24D")
+
+        val bgColor = try { Color.parseColor(bgHex) } catch (e: Exception) { Color.parseColor("#FF0F1629") }
+        val textColor = try { Color.parseColor(textHex) } catch (e: Exception) { Color.WHITE }
+        val accentColor = try { Color.parseColor(accentHex) } catch (e: Exception) { Color.parseColor("#FFC9A24D") }
+
+        // Apply Background
+        views.setInt(R.id.iv_background, "setColorFilter", bgColor)
+
+        // Apply Text Colors
+        views.setTextColor(R.id.next_prayer_name, accentColor)
+        views.setTextColor(R.id.time_remaining, textColor)
+        views.setTextColor(R.id.current_time, textColor)
+        views.setTextColor(R.id.current_date, Color.argb(200, Color.red(textColor), Color.green(textColor), Color.blue(textColor)))
+        views.setTextColor(R.id.location, Color.argb(150, Color.red(textColor), Color.green(textColor), Color.blue(textColor)))
         
         // Get prayer times
         val prayerTimes = arrayOf(
@@ -100,7 +120,7 @@ class CreativeWidgetProvider : AppWidgetProvider() {
         views.setTextViewText(R.id.location, location)
         
         // Highlight next prayer in grid
-        highlightNextPrayer(views, nextPrayerName)
+        highlightNextPrayer(views, nextPrayerName, textColor, accentColor)
         
         // Set click intent - make entire widget clickable
         val intent = Intent(context, MainActivity::class.java)
@@ -148,10 +168,10 @@ class CreativeWidgetProvider : AppWidgetProvider() {
         }
     }
     
-    private fun highlightNextPrayer(views: RemoteViews, nextPrayerName: String) {
+    private fun highlightNextPrayer(views: RemoteViews, nextPrayerName: String, textColor: Int, accentColor: Int) {
         // Reset all to default color
-        val defaultColor = 0xFFFFFFFF.toInt()
-        val highlightColor = 0xFFC9A24D.toInt()
+        val defaultColor = textColor
+        val highlightColor = accentColor
         
         views.setTextColor(R.id.fajr_time, defaultColor)
         views.setTextColor(R.id.dhuhr_time, defaultColor)

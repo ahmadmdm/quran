@@ -17,6 +17,17 @@ class WidgetService {
     'CreativeWidgetProvider',
   ];
 
+  static const Map<String, String> _widgetTypeToSlug = {
+    'Minimal': 'minimal',
+    'Smart Card': 'smart_card',
+    'Premium Clock': 'premium_clock',
+    'Glass Card': 'glass_card',
+    'Quran Verse': 'quran_verse',
+    'Hijri Date': 'hijri_date',
+    'Calligraphy': 'calligraphy',
+    'Creative': 'creative',
+  };
+
   static Future<void> updateWidgetData({
     required String nextPrayerName,
     required String nextPrayerTime,
@@ -95,16 +106,14 @@ class WidgetService {
     required int accentColor,
     required double opacity,
     String? fontStyle,
+    double? fontSize,
     String? widgetType, // Add widgetType parameter
   }) async {
     // Convert colors to Hex Strings (#AARRGGBB) for Android compatibility
     String toHex(int colorValue) =>
         '#${(colorValue & 0xFFFFFFFF).toRadixString(16).padLeft(8, '0').toUpperCase()}';
 
-    // Determine prefix based on widget type (default to global if null)
-    final prefix = widgetType != null
-        ? '${widgetType.toLowerCase()}_'
-        : 'widget_';
+    final prefix = _prefixForType(widgetType);
 
     await HomeWidget.saveWidgetData<String>(
       '${prefix}background_color',
@@ -123,9 +132,57 @@ class WidgetService {
     if (fontStyle != null) {
       await HomeWidget.saveWidgetData<String>('${prefix}font_style', fontStyle);
     }
+    if (fontSize != null) {
+      await HomeWidget.saveWidgetData<String>(
+        '${prefix}font_size',
+        fontSize.toStringAsFixed(1),
+      );
+    }
 
     // Update all widgets
     await _updateAllWidgets();
+  }
+
+  /// Get settings for a specific widget type
+  static Future<Map<String, dynamic>> getWidgetSettings(
+    String widgetType,
+  ) async {
+    final prefix = _prefixForType(widgetType);
+
+    final bgColorHex = await HomeWidget.getWidgetData<String>(
+      '${prefix}background_color',
+      defaultValue: '#FF0F1629',
+    );
+    final textColorHex = await HomeWidget.getWidgetData<String>(
+      '${prefix}text_color',
+      defaultValue: '#FFFFFFFF',
+    );
+    final accentColorHex = await HomeWidget.getWidgetData<String>(
+      '${prefix}accent_color',
+      defaultValue: '#FFC9A24D',
+    );
+    final opacity = await HomeWidget.getWidgetData<double>(
+      '${prefix}opacity',
+      defaultValue: 1.0,
+    );
+    final fontStyle = await HomeWidget.getWidgetData<String>(
+      '${prefix}font_style',
+      defaultValue: 'default',
+    );
+    final fontSizeString = await HomeWidget.getWidgetData<String>(
+      '${prefix}font_size',
+      defaultValue: '56.0',
+    );
+    final fontSize = double.tryParse(fontSizeString ?? '56.0') ?? 56.0;
+
+    return {
+      'backgroundColor': int.parse(bgColorHex!.replaceFirst('#', '0xFF')),
+      'textColor': int.parse(textColorHex!.replaceFirst('#', '0xFF')),
+      'accentColor': int.parse(accentColorHex!.replaceFirst('#', '0xFF')),
+      'opacity': opacity,
+      'fontStyle': fontStyle,
+      'fontSize': fontSize,
+    };
   }
 
   /// Update widget colors from Color objects
@@ -135,6 +192,7 @@ class WidgetService {
     required Color accentColor,
     required double opacity,
     String? fontStyle,
+    double? fontSize,
     String? widgetType, // Add widgetType parameter
   }) async {
     await saveWidgetSettings(
@@ -143,6 +201,7 @@ class WidgetService {
       accentColor: accentColor.value,
       opacity: opacity,
       fontStyle: fontStyle,
+      fontSize: fontSize,
       widgetType: widgetType,
     );
   }
@@ -159,13 +218,21 @@ class WidgetService {
   }
 
   static Future<void> initializeDefaultSettings() async {
-    // Set default widget colors
-    await saveWidgetSettings(
-      backgroundColor: 0xFF0F1629,
-      textColor: 0xFFFFFFFF,
-      accentColor: 0xFFC9A24D,
-      opacity: 1.0,
-    );
+    for (final widgetType in _widgetTypeToSlug.keys) {
+      final prefix = _prefixForType(widgetType);
+      final existingBackground = await HomeWidget.getWidgetData<String>(
+        '${prefix}background_color',
+      );
+      if (existingBackground != null) continue;
+
+      await saveWidgetSettings(
+        backgroundColor: 0xFF0F1629,
+        textColor: 0xFFFFFFFF,
+        accentColor: 0xFFC9A24D,
+        opacity: 1.0,
+        widgetType: widgetType,
+      );
+    }
   }
 
   /// Force refresh all widgets - useful when prayer times change
@@ -189,5 +256,13 @@ class WidgetService {
     } catch (e) {
       print('Failed to update Quran widget: $e');
     }
+  }
+
+  static String _prefixForType(String? widgetType) {
+    if (widgetType == null) return 'widget_';
+    final slug =
+        _widgetTypeToSlug[widgetType] ??
+        widgetType.toLowerCase().replaceAll(' ', '_');
+    return '${slug}_';
   }
 }

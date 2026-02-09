@@ -20,7 +20,7 @@
         android:layout_height="match_parent"
         android:orientation="vertical"
         android:gravity="center"
-        android:padding="8dp">
+        android:padding="2dp">
 
         <ImageView
             android:id="@+id/iv_day_name"
@@ -48,10 +48,12 @@
             android:id="@+id/tv_full_date"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
+            android:layout_marginTop="2dp"
             android:text="٢٠ شعبان، ١٤٤٧"
             android:textColor="#E0E0E0"
-            android:textSize="18sp"
+            android:textSize="12sp"
+            android:maxLines="1"
+            android:ellipsize="end"
             android:fontFamily="sans-serif-light"
             android:shadowColor="#80000000"
             android:shadowDx="1"

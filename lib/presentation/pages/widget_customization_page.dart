@@ -19,6 +19,7 @@ class _WidgetCustomizationPageState
   double _opacity = 1.0;
   String _selectedWidget = 'Minimal';
   String _selectedFontStyle = 'default';
+  double _selectedFontSize = 56;
 
   final List<Color> _backgroundColors = [
     const Color(0xFF0F1629), // Dark Blue (Default)
@@ -94,17 +95,30 @@ class _WidgetCustomizationPageState
     {
       'id': 'Calligraphy',
       'name': 'مخطوطة اليوم',
-      'description': 'ويدجت التاريخ بتصميم خط عربي مميز',
+      'description': 'ويدجت تاريخ بخط عربي يدعم التشكيل والتحجيم',
       'icon': Icons.edit_note,
-      'size': '2x2',
+      'size': '2x2 .. 4x2',
     },
   ];
 
   @override
   void initState() {
     super.initState();
-    // Ideally load saved settings for the default selected widget
-    // For now we start with defaults or what's in memory
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final settings = await WidgetService.getWidgetSettings(_selectedWidget);
+    if (mounted) {
+      setState(() {
+        _backgroundColor = Color(settings['backgroundColor']);
+        _textColor = Color(settings['textColor']);
+        _accentColor = Color(settings['accentColor']);
+        _opacity = settings['opacity'];
+        _selectedFontStyle = settings['fontStyle'];
+        _selectedFontSize = (settings['fontSize'] as num?)?.toDouble() ?? 56;
+      });
+    }
   }
 
   @override
@@ -200,6 +214,18 @@ class _WidgetCustomizationPageState
                     _buildSectionTitle(theme, 'نمط الخط'),
                     const SizedBox(height: 12),
                     _buildFontStyleSelector(),
+                    const SizedBox(height: 16),
+                    _buildSectionTitle(theme, 'حجم الخط'),
+                    Slider(
+                      value: _selectedFontSize,
+                      min: 36,
+                      max: 82,
+                      divisions: 23,
+                      label: _selectedFontSize.round().toString(),
+                      onChanged: (value) {
+                        setState(() => _selectedFontSize = value);
+                      },
+                    ),
                     const SizedBox(height: 28),
                   ],
 
@@ -328,10 +354,13 @@ class _WidgetCustomizationPageState
     final isSelected = _selectedWidget == widget['id'];
 
     return GestureDetector(
-      onTap: () => setState(() => _selectedWidget = widget['id']),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 140,
+      onTap: () {
+        setState(() => _selectedWidget = widget['id']);
+        _loadSettings();
+      },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: 140,
         margin: const EdgeInsets.only(right: 12),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -362,28 +391,7 @@ class _WidgetCustomizationPageState
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Widget Preview Icon
-            Container(
-              width: 60,
-              height: 60,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    _backgroundColor.withValues(alpha: _opacity),
-                    _backgroundColor.withValues(alpha: _opacity * 0.8),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.2),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Icon(widget['icon'], color: _accentColor, size: 28),
-            ),
+            _buildWidgetShapePreview(widget['id'] as String),
             const SizedBox(height: 10),
             // Widget Name
             Text(
@@ -431,12 +439,66 @@ class _WidgetCustomizationPageState
     );
   }
 
+  Widget _buildWidgetShapePreview(String widgetId) {
+    double width = 74;
+    double height = 52;
+    switch (widgetId) {
+      case 'Minimal':
+      case 'Calligraphy':
+        width = 52;
+        height = 52;
+        break;
+      case 'Premium Clock':
+      case 'Hijri Date':
+        width = 64;
+        height = 64;
+        break;
+      case 'Creative':
+        width = 74;
+        height = 56;
+        break;
+      default:
+        width = 74;
+        height = 48;
+    }
+
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            _backgroundColor.withValues(alpha: _opacity),
+            _backgroundColor.withValues(alpha: _opacity * 0.8),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _accentColor.withValues(alpha: 0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Icon(
+          _widgetTypes
+              .firstWhere((e) => e['id'] == widgetId)['icon'] as IconData,
+          color: _accentColor,
+          size: 18,
+        ),
+      ),
+    );
+  }
+
   Widget _buildFontStyleSelector() {
     final styles = [
-      {'id': 'default', 'name': 'افتراضي', 'sample': 'أ ب ت'},
-      {'id': 'serif', 'name': 'نسخ', 'sample': 'أ ب ت'},
-      {'id': 'cursive', 'name': 'رقعة', 'sample': 'أ ب ت'},
-      {'id': 'monospace', 'name': 'كوفي', 'sample': 'أ ب ت'},
+      {'id': 'default', 'name': 'افتراضي', 'sample': 'اَلْيَوْمُ'},
+      {'id': 'serif', 'name': 'نسخي', 'sample': 'اَلْأَحَدُ'},
+      {'id': 'cursive', 'name': 'ديواني', 'sample': 'اَلْجُمُعَةُ'},
+      {'id': 'monospace', 'name': 'كوفي', 'sample': 'اَلثُّلَاثَاءُ'},
     ];
 
     return SingleChildScrollView(
@@ -616,7 +678,14 @@ class _WidgetCustomizationPageState
       height: 180,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _backgroundColor.withValues(alpha: _opacity),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            _backgroundColor.withValues(alpha: _opacity),
+            _backgroundColor.withValues(alpha: _opacity * 0.75),
+          ],
+        ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
@@ -625,13 +694,6 @@ class _WidgetCustomizationPageState
             offset: const Offset(0, 10),
           ),
         ],
-        image: const DecorationImage(
-          image: AssetImage(
-            'assets/images/widget_gradient_bg.png',
-          ), // Assuming this exists or handled by color
-          fit: BoxFit.cover,
-          opacity: 0.2,
-        ),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -640,7 +702,7 @@ class _WidgetCustomizationPageState
             'الأحد',
             style: TextStyle(
               color: _textColor,
-              fontSize: 48,
+              fontSize: (_selectedFontSize * 0.84).clamp(26, 64),
               fontWeight: FontWeight.bold,
               fontFamily: _getFontFamilyForStyle(_selectedFontStyle),
               height: 0.8,
@@ -663,13 +725,13 @@ class _WidgetCustomizationPageState
   String? _getFontFamilyForStyle(String style) {
     switch (style) {
       case 'serif':
-        return 'Times New Roman'; // Fallback to system serif
+        return 'serif';
       case 'cursive':
-        return 'Pacifico'; // Use Google Fonts if available or system
+        return 'cursive';
       case 'monospace':
-        return 'Courier New';
+        return 'monospace';
       default:
-        return null; // Default system font
+        return null;
     }
   }
 
@@ -1201,6 +1263,7 @@ class _WidgetCustomizationPageState
         accentColor: _accentColor,
         opacity: _opacity,
         fontStyle: _selectedWidget == 'Calligraphy' ? _selectedFontStyle : null,
+        fontSize: _selectedWidget == 'Calligraphy' ? _selectedFontSize : null,
         widgetType: _selectedWidget, // Pass selected widget type
       );
 

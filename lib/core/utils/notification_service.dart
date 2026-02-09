@@ -90,7 +90,7 @@ class NotificationService {
         description: 'إشعارات وقت الصلاة مع صوت الأذان',
         importance: Importance.max,
         playSound: true,
-        sound: null, // Changed to null (system sound)
+        sound: const RawResourceAndroidNotificationSound('azan'),
         enableVibration: true,
         enableLights: true,
         ledColor: const Color.fromARGB(255, 201, 162, 77),
@@ -141,20 +141,8 @@ class NotificationService {
 
     // Dynamic channels for customization
     final channels = [
-      (
-        'azan_sound_vibrate_v2',
-        'أذان مع اهتزاز',
-        true,
-        true,
-        null,
-      ), // Changed to null (system sound)
-      (
-        'azan_sound_no_vibrate_v2',
-        'أذان بدون اهتزاز',
-        true,
-        false,
-        null,
-      ), // Changed to null (system sound)
+      ('azan_sound_vibrate_v2', 'أذان مع اهتزاز', true, true, 'azan'),
+      ('azan_sound_no_vibrate_v2', 'أذان بدون اهتزاز', true, false, 'azan'),
       ('system_sound_vibrate_v2', 'صوت النظام مع اهتزاز', true, true, null),
       (
         'system_sound_no_vibrate_v2',
@@ -257,10 +245,15 @@ class NotificationService {
   Future<void> schedulePrayers(
     PrayerTimes prayerTimes, {
     bool notificationsEnabled = true,
+    bool prayerTimeNotificationsEnabled = true,
+    bool prePrayerRemindersEnabled = true,
     int preAzanReminderOffset = 15,
     String notificationSound = 'azan',
     bool vibrationEnabled = true,
+    Set<Prayer>? enabledPrayers,
   }) async {
+    await init();
+
     // Cancel all existing notifications first
     await cancelAll();
 
@@ -283,43 +276,63 @@ class NotificationService {
       await _requestPermissions();
     }
 
-    final prayers = [
-      (Prayer.fajr, prayerTimes.fajr, 'الفجر', 'Fajr'),
-      (Prayer.dhuhr, prayerTimes.dhuhr, 'الظهر', 'Dhuhr'),
-      (Prayer.asr, prayerTimes.asr, 'العصر', 'Asr'),
-      (Prayer.maghrib, prayerTimes.maghrib, 'المغرب', 'Maghrib'),
-      (Prayer.isha, prayerTimes.isha, 'العشاء', 'Isha'),
-    ];
-
-    int id = 0;
+    // Schedule for the next 7 days
+    int notificationId = 0;
     final now = DateTime.now();
 
-    for (final prayer in prayers) {
-      final prayerNameAr = prayer.$3;
-      final prayerNameEn = prayer.$4;
-      final prayerTime = prayer.$2;
+    for (int day = 0; day < 7; day++) {
+      final date = now.add(Duration(days: day));
+      final dateComponents = DateComponents(date.year, date.month, date.day);
 
-      // Schedule main Azan notification
-      if (prayerTime.isAfter(now)) {
-        await _scheduleNotification(
-          id: id++,
-          title: 'حان وقت صلاة $prayerNameAr',
-          body: 'حان الآن موعد صلاة $prayerNameAr - $prayerNameEn',
-          scheduledTime: prayerTime,
-          isAzan: true,
-          soundType: notificationSound,
-          vibrate: vibrationEnabled,
-          payload: 'prayer_$prayerNameEn',
-        );
+      final dailyPrayerTimes = PrayerTimes(
+        prayerTimes.coordinates,
+        dateComponents,
+        prayerTimes.calculationParameters,
+      );
+
+      final prayers = [
+        (Prayer.fajr, dailyPrayerTimes.fajr, 'الفجر', 'Fajr'),
+        (Prayer.dhuhr, dailyPrayerTimes.dhuhr, 'الظهر', 'Dhuhr'),
+        (Prayer.asr, dailyPrayerTimes.asr, 'العصر', 'Asr'),
+        (Prayer.maghrib, dailyPrayerTimes.maghrib, 'المغرب', 'Maghrib'),
+        (Prayer.isha, dailyPrayerTimes.isha, 'العشاء', 'Isha'),
+      ];
+
+      for (final prayer in prayers) {
+        final prayerType = prayer.$1;
+        final prayerNameAr = prayer.$3;
+        final prayerNameEn = prayer.$4;
+        final prayerTime = prayer.$2;
+        final prayerAllowed = enabledPrayers == null
+            ? true
+            : enabledPrayers.contains(prayerType);
+        if (!prayerAllowed) continue;
+
+        // Skip if prayer time has passed (only for today)
+        if (prayerTime.isBefore(now)) continue;
+
+        if (prayerTimeNotificationsEnabled) {
+          await _scheduleNotification(
+            id: notificationId++,
+            title: 'حان وقت صلاة $prayerNameAr',
+            body: 'حان الآن موعد صلاة $prayerNameAr - $prayerNameEn',
+            scheduledTime: prayerTime,
+            isAzan: true,
+            soundType: notificationSound,
+            vibrate: vibrationEnabled,
+            payload: 'prayer_$prayerNameEn',
+          );
+        }
 
         // Schedule pre-Azan reminder
-        if (preAzanReminderOffset > 0) {
+        if (prePrayerRemindersEnabled && preAzanReminderOffset > 0) {
           final reminderTime = prayerTime.subtract(
             Duration(minutes: preAzanReminderOffset),
           );
+
           if (reminderTime.isAfter(now)) {
             await _scheduleNotification(
-              id: id++,
+              id: notificationId++,
               title: 'تذكير: صلاة $prayerNameAr',
               body: 'باقي $preAzanReminderOffset دقيقة على صلاة $prayerNameAr',
               scheduledTime: reminderTime,
@@ -336,7 +349,7 @@ class NotificationService {
     // Start native countdown service
     await _startCountdownService(prayerTimes);
 
-    print('Scheduled $id notifications');
+    print('Scheduled $notificationId notifications');
   }
 
   Future<void> _scheduleNotification({
@@ -365,7 +378,7 @@ class NotificationService {
             : 'azan_sound_no_vibrate_v2';
         channelName = 'إشعارات الأذان';
         channelDesc = 'إشعارات وقت الصلاة مع صوت الأذان';
-        sound = null; // Use system sound
+        sound = const RawResourceAndroidNotificationSound('azan');
       } else if (soundType == 'silent') {
         channelId = vibrate ? 'silent_vibrate_v2' : 'silent_no_vibrate_v2';
         channelName = 'إشعارات صامتة';
@@ -595,5 +608,28 @@ class NotificationService {
     }
 
     return status;
+  }
+
+  Future<void> openAppNotificationSettings() async {
+    await openAppSettings();
+  }
+
+  Future<void> requestCriticalAlarmPermissions() async {
+    if (!Platform.isAndroid) return;
+
+    final platform = flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    await platform?.requestNotificationsPermission();
+
+    if (_androidSdkVersion >= 31) {
+      await platform?.requestExactAlarmsPermission();
+      await Permission.scheduleExactAlarm.request();
+    }
+
+    if (await Permission.ignoreBatteryOptimizations.isDenied) {
+      await Permission.ignoreBatteryOptimizations.request();
+    }
   }
 }

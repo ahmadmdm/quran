@@ -11,8 +11,20 @@ class SettingsState {
   final int preAzanReminderOffset;
   final bool use24hFormat;
   final bool largeText;
+  final bool alwaysShowHomeCards;
   final String notificationSound;
   final bool vibrationEnabled;
+  final bool prayerTimeNotificationsEnabled;
+  final bool prePrayerRemindersEnabled;
+  final bool fajrNotificationsEnabled;
+  final bool dhuhrNotificationsEnabled;
+  final bool asrNotificationsEnabled;
+  final bool maghribNotificationsEnabled;
+  final bool ishaNotificationsEnabled;
+  final bool useManualLocation;
+  final double? manualLatitude;
+  final double? manualLongitude;
+  final String? manualLocationLabel;
 
   SettingsState({
     required this.calculationMethod,
@@ -22,8 +34,20 @@ class SettingsState {
     required this.preAzanReminderOffset,
     required this.use24hFormat,
     required this.largeText,
+    required this.alwaysShowHomeCards,
     required this.notificationSound,
     required this.vibrationEnabled,
+    required this.prayerTimeNotificationsEnabled,
+    required this.prePrayerRemindersEnabled,
+    required this.fajrNotificationsEnabled,
+    required this.dhuhrNotificationsEnabled,
+    required this.asrNotificationsEnabled,
+    required this.maghribNotificationsEnabled,
+    required this.ishaNotificationsEnabled,
+    required this.useManualLocation,
+    required this.manualLatitude,
+    required this.manualLongitude,
+    required this.manualLocationLabel,
   });
 
   SettingsState copyWith({
@@ -34,8 +58,21 @@ class SettingsState {
     int? preAzanReminderOffset,
     bool? use24hFormat,
     bool? largeText,
+    bool? alwaysShowHomeCards,
     String? notificationSound,
     bool? vibrationEnabled,
+    bool? prayerTimeNotificationsEnabled,
+    bool? prePrayerRemindersEnabled,
+    bool? fajrNotificationsEnabled,
+    bool? dhuhrNotificationsEnabled,
+    bool? asrNotificationsEnabled,
+    bool? maghribNotificationsEnabled,
+    bool? ishaNotificationsEnabled,
+    bool? useManualLocation,
+    double? manualLatitude,
+    double? manualLongitude,
+    String? manualLocationLabel,
+    bool clearManualLocationLabel = false,
   }) {
     return SettingsState(
       calculationMethod: calculationMethod ?? this.calculationMethod,
@@ -47,8 +84,29 @@ class SettingsState {
           preAzanReminderOffset ?? this.preAzanReminderOffset,
       use24hFormat: use24hFormat ?? this.use24hFormat,
       largeText: largeText ?? this.largeText,
+      alwaysShowHomeCards: alwaysShowHomeCards ?? this.alwaysShowHomeCards,
       notificationSound: notificationSound ?? this.notificationSound,
       vibrationEnabled: vibrationEnabled ?? this.vibrationEnabled,
+      prayerTimeNotificationsEnabled:
+          prayerTimeNotificationsEnabled ?? this.prayerTimeNotificationsEnabled,
+      prePrayerRemindersEnabled:
+          prePrayerRemindersEnabled ?? this.prePrayerRemindersEnabled,
+      fajrNotificationsEnabled:
+          fajrNotificationsEnabled ?? this.fajrNotificationsEnabled,
+      dhuhrNotificationsEnabled:
+          dhuhrNotificationsEnabled ?? this.dhuhrNotificationsEnabled,
+      asrNotificationsEnabled:
+          asrNotificationsEnabled ?? this.asrNotificationsEnabled,
+      maghribNotificationsEnabled:
+          maghribNotificationsEnabled ?? this.maghribNotificationsEnabled,
+      ishaNotificationsEnabled:
+          ishaNotificationsEnabled ?? this.ishaNotificationsEnabled,
+      useManualLocation: useManualLocation ?? this.useManualLocation,
+      manualLatitude: manualLatitude ?? this.manualLatitude,
+      manualLongitude: manualLongitude ?? this.manualLongitude,
+      manualLocationLabel: clearManualLocationLabel
+          ? null
+          : (manualLocationLabel ?? this.manualLocationLabel),
     );
   }
 }
@@ -64,8 +122,20 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
           preAzanReminderOffset: 15,
           use24hFormat: false,
           largeText: false,
+          alwaysShowHomeCards: false,
           notificationSound: 'azan',
           vibrationEnabled: true,
+          prayerTimeNotificationsEnabled: true,
+          prePrayerRemindersEnabled: true,
+          fajrNotificationsEnabled: true,
+          dhuhrNotificationsEnabled: true,
+          asrNotificationsEnabled: true,
+          maghribNotificationsEnabled: true,
+          ishaNotificationsEnabled: true,
+          useManualLocation: false,
+          manualLatitude: null,
+          manualLongitude: null,
+          manualLocationLabel: null,
         ),
       ) {
     _loadSettings();
@@ -94,9 +164,39 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
         (box.get('use24hFormat', defaultValue: false) as bool?) ?? false;
     final largeTextEnabled =
         (box.get('largeText', defaultValue: false) as bool?) ?? false;
+    final alwaysShowHomeCards =
+        (box.get('alwaysShowHomeCards', defaultValue: false) as bool?) ??
+        false;
     final sound = box.get('notificationSound', defaultValue: 'azan');
     final vib =
         (box.get('vibrationEnabled', defaultValue: true) as bool?) ?? true;
+    final prayerTimeNotificationsEnabled =
+        (box.get('prayerTimeNotificationsEnabled', defaultValue: true)
+            as bool?) ??
+        true;
+    final prePrayerRemindersEnabled =
+        (box.get('prePrayerRemindersEnabled', defaultValue: true) as bool?) ??
+        true;
+    final fajrNotificationsEnabled =
+        (box.get('fajrNotificationsEnabled', defaultValue: true) as bool?) ??
+        true;
+    final dhuhrNotificationsEnabled =
+        (box.get('dhuhrNotificationsEnabled', defaultValue: true) as bool?) ??
+        true;
+    final asrNotificationsEnabled =
+        (box.get('asrNotificationsEnabled', defaultValue: true) as bool?) ??
+        true;
+    final maghribNotificationsEnabled =
+        (box.get('maghribNotificationsEnabled', defaultValue: true) as bool?) ??
+        true;
+    final ishaNotificationsEnabled =
+        (box.get('ishaNotificationsEnabled', defaultValue: true) as bool?) ??
+        true;
+    final useManualLocation =
+        (box.get('useManualLocation', defaultValue: false) as bool?) ?? false;
+    final manualLatitude = (box.get('manualLatitude') as num?)?.toDouble();
+    final manualLongitude = (box.get('manualLongitude') as num?)?.toDouble();
+    final manualLocationLabel = box.get('manualLocationLabel') as String?;
 
     CalculationMethod calcMethod = CalculationMethod.values.firstWhere(
       (e) => e.name == calcMethodName,
@@ -118,8 +218,20 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       preAzanReminderOffset: offset,
       use24hFormat: use24h,
       largeText: largeTextEnabled,
+      alwaysShowHomeCards: alwaysShowHomeCards,
       notificationSound: sound,
       vibrationEnabled: vib,
+      prayerTimeNotificationsEnabled: prayerTimeNotificationsEnabled,
+      prePrayerRemindersEnabled: prePrayerRemindersEnabled,
+      fajrNotificationsEnabled: fajrNotificationsEnabled,
+      dhuhrNotificationsEnabled: dhuhrNotificationsEnabled,
+      asrNotificationsEnabled: asrNotificationsEnabled,
+      maghribNotificationsEnabled: maghribNotificationsEnabled,
+      ishaNotificationsEnabled: ishaNotificationsEnabled,
+      useManualLocation: useManualLocation,
+      manualLatitude: manualLatitude,
+      manualLongitude: manualLongitude,
+      manualLocationLabel: manualLocationLabel,
     );
   }
 
@@ -165,6 +277,12 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     await box.put('largeText', enabled);
   }
 
+  Future<void> setAlwaysShowHomeCards(bool enabled) async {
+    state = state.copyWith(alwaysShowHomeCards: enabled);
+    final box = Hive.box(_boxName);
+    await box.put('alwaysShowHomeCards', enabled);
+  }
+
   Future<void> setNotificationSound(String sound) async {
     state = state.copyWith(notificationSound: sound);
     final box = Hive.box(_boxName);
@@ -175,6 +293,75 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     state = state.copyWith(vibrationEnabled: enabled);
     final box = Hive.box(_boxName);
     await box.put('vibrationEnabled', enabled);
+  }
+
+  Future<void> setPrayerTimeNotificationsEnabled(bool enabled) async {
+    state = state.copyWith(prayerTimeNotificationsEnabled: enabled);
+    final box = Hive.box(_boxName);
+    await box.put('prayerTimeNotificationsEnabled', enabled);
+  }
+
+  Future<void> setPrePrayerRemindersEnabled(bool enabled) async {
+    state = state.copyWith(prePrayerRemindersEnabled: enabled);
+    final box = Hive.box(_boxName);
+    await box.put('prePrayerRemindersEnabled', enabled);
+  }
+
+  Future<void> setPrayerNotificationEnabled(Prayer prayer, bool enabled) async {
+    final box = Hive.box(_boxName);
+    switch (prayer) {
+      case Prayer.fajr:
+        state = state.copyWith(fajrNotificationsEnabled: enabled);
+        await box.put('fajrNotificationsEnabled', enabled);
+        break;
+      case Prayer.dhuhr:
+        state = state.copyWith(dhuhrNotificationsEnabled: enabled);
+        await box.put('dhuhrNotificationsEnabled', enabled);
+        break;
+      case Prayer.asr:
+        state = state.copyWith(asrNotificationsEnabled: enabled);
+        await box.put('asrNotificationsEnabled', enabled);
+        break;
+      case Prayer.maghrib:
+        state = state.copyWith(maghribNotificationsEnabled: enabled);
+        await box.put('maghribNotificationsEnabled', enabled);
+        break;
+      case Prayer.isha:
+        state = state.copyWith(ishaNotificationsEnabled: enabled);
+        await box.put('ishaNotificationsEnabled', enabled);
+        break;
+      case Prayer.none:
+      case Prayer.sunrise:
+        break;
+    }
+  }
+
+  Future<void> setManualLocation({
+    required double latitude,
+    required double longitude,
+    String? label,
+  }) async {
+    state = state.copyWith(
+      useManualLocation: true,
+      manualLatitude: latitude,
+      manualLongitude: longitude,
+      manualLocationLabel: label,
+    );
+    final box = Hive.box(_boxName);
+    await box.put('useManualLocation', true);
+    await box.put('manualLatitude', latitude);
+    await box.put('manualLongitude', longitude);
+    if (label == null || label.trim().isEmpty) {
+      await box.delete('manualLocationLabel');
+    } else {
+      await box.put('manualLocationLabel', label.trim());
+    }
+  }
+
+  Future<void> setUseAutoLocation() async {
+    state = state.copyWith(useManualLocation: false);
+    final box = Hive.box(_boxName);
+    await box.put('useManualLocation', false);
   }
 }
 

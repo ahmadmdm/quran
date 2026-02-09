@@ -8,6 +8,8 @@ import android.content.Intent
 import android.widget.RemoteViews
 import com.luxury.prayer.prayer_app.MainActivity
 import com.luxury.prayer.prayer_app.R
+import android.graphics.Color
+import es.antonborri.home_widget.HomeWidgetPlugin
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -63,6 +65,27 @@ class HijriDateWidgetProvider : AppWidgetProvider() {
         appWidgetId: Int
     ) {
         val views = RemoteViews(context.packageName, R.layout.widget_hijri_date)
+        val widgetData = HomeWidgetPlugin.getData(context)
+
+        // Customization
+        val bgHex = getSetting(widgetData, "hijri_date_background_color", "hijri date_background_color", "#FF0F1629")
+        val textHex = getSetting(widgetData, "hijri_date_text_color", "hijri date_text_color", "#FFFFFFFF")
+        val accentHex = getSetting(widgetData, "hijri_date_accent_color", "hijri date_accent_color", "#FFC9A24D")
+
+        val bgColor = try { Color.parseColor(bgHex) } catch (e: Exception) { Color.parseColor("#FF0F1629") }
+        val textColor = try { Color.parseColor(textHex) } catch (e: Exception) { Color.WHITE }
+        val accentColor = try { Color.parseColor(accentHex) } catch (e: Exception) { Color.parseColor("#FFC9A24D") }
+
+        // Apply Background
+        views.setInt(R.id.iv_background, "setColorFilter", bgColor)
+
+        // Apply Text Colors
+        views.setTextColor(R.id.day_name_ar, accentColor)
+        views.setTextColor(R.id.hijri_day, textColor)
+        views.setTextColor(R.id.hijri_month, textColor)
+        views.setTextColor(R.id.hijri_year, textColor)
+        views.setTextColor(R.id.gregorian_date, Color.argb(200, Color.red(textColor), Color.green(textColor), Color.blue(textColor)))
+        views.setTextColor(R.id.current_time, Color.argb(150, Color.red(textColor), Color.green(textColor), Color.blue(textColor)))
         
         val now = Calendar.getInstance()
         
@@ -151,5 +174,16 @@ class HijriDateWidgetProvider : AppWidgetProvider() {
         val year = 30 * n + j - 30
         
         return HijriDate(year, month, day)
+    }
+
+    private fun getSetting(
+        prefs: android.content.SharedPreferences,
+        key: String,
+        legacyKey: String,
+        defaultValue: String
+    ): String {
+        return prefs.getString(key, null)
+            ?: prefs.getString(legacyKey, null)
+            ?: defaultValue
     }
 }

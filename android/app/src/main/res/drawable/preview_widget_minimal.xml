@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Background -->
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="16dp" />
+            <solid android:color="#FF0F1629" />
+            <stroke android:width="1dp" android:color="#33FFFFFF" />
+        </shape>
+    </item>
+    
+    <!-- Label -->
+    <item android:top="15dp" android:gravity="center_horizontal">
+        <shape android:shape="rectangle">
+            <size android:width="40dp" android:height="4dp" />
+            <corners android:radius="2dp" />
+            <solid android:color="#88FFFFFF" />
+        </shape>
+    </item>
+
+    <!-- Prayer Name (Gold) -->
+    <item android:top="25dp" android:gravity="center_horizontal">
+        <shape android:shape="rectangle">
+            <size android:width="60dp" android:height="8dp" />
+            <corners android:radius="4dp" />
+            <solid android:color="#FFC9A24D" />
+        </shape>
+    </item>
+    
+    <!-- Time Remaining (White) -->
+    <item android:top="40dp" android:gravity="center_horizontal">
+        <shape android:shape="rectangle">
+            <size android:width="90dp" android:height="20dp" />
+            <corners android:radius="4dp" />
+            <solid android:color="#FFFFFFFF" />
+        </shape>
+    </item>
+    
+    <!-- Time (Grey) -->
+    <item android:top="65dp" android:gravity="center_horizontal">
+        <shape android:shape="rectangle">
+            <size android:width="50dp" android:height="6dp" />
+            <corners android:radius="3dp" />
+            <solid android:color="#99FFFFFF" />
+        </shape>
+    </item>
+</layer-list>

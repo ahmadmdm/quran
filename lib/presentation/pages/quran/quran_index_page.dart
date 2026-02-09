@@ -19,6 +19,7 @@ class _QuranIndexPageState extends State<QuranIndexPage>
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   final ScrollController _scrollController = ScrollController();
+  final Map<int, (int surah, int verse)> _pageStartCache = {};
 
   @override
   void initState() {
@@ -112,7 +113,7 @@ class _QuranIndexPageState extends State<QuranIndexPage>
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'The Holy Quran',
+                            'فهرس السور والأجزاء',
                             style: TextStyle(
                               fontSize: 14,
                               color: Colors.white.withValues(alpha: 0.7),
@@ -148,8 +149,8 @@ class _QuranIndexPageState extends State<QuranIndexPage>
                     tabs: [
                       Tab(text: localizations.translate('surah')),
                       Tab(text: localizations.translate('juz')),
-                      const Tab(text: 'المفضلة'),
-                      const Tab(text: 'الفواصل'),
+                      Tab(text: localizations.translate('favorites')),
+                      Tab(text: localizations.translate('bookmarks_tab')),
                     ],
                   ),
                 ),
@@ -823,13 +824,17 @@ class _QuranIndexPageState extends State<QuranIndexPage>
     return ValueListenableBuilder(
       valueListenable: Hive.box(
         'settings',
-      ).listenable(keys: ['verse_bookmarks']),
+      ).listenable(keys: ['verse_bookmarks', 'page_bookmarks']),
       builder: (context, Box box, child) {
-        final bookmarks =
+        final verseBookmarks =
             (box.get('verse_bookmarks', defaultValue: <String>[]) as List)
                 .cast<String>();
+        final pageBookmarks =
+            (box.get('page_bookmarks', defaultValue: <int>[]) as List)
+                .cast<int>()
+              ..sort();
 
-        if (bookmarks.isEmpty) {
+        if (verseBookmarks.isEmpty && pageBookmarks.isEmpty) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -848,7 +853,7 @@ class _QuranIndexPageState extends State<QuranIndexPage>
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'اضغط مطولاً على الآية في صفحة القراءة لحفظ فاصل',
+                  'استخدم زر فاصل الصفحة أو أيقونة حفظ الآية داخل صفحة القراءة',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: theme.disabledColor,
                   ),
@@ -861,31 +866,28 @@ class _QuranIndexPageState extends State<QuranIndexPage>
 
         final isAr = localizations.locale.languageCode == 'ar';
 
-        return ListView.builder(
-          itemCount: bookmarks.length,
+        return ListView(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          itemBuilder: (context, index) {
-            final parts = bookmarks[index].split(':');
-            final surahNumber = int.parse(parts[0]);
-            final verseNumber = int.parse(parts[1]);
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              decoration: BoxDecoration(
-                color: theme.cardColor,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+          children: [
+            if (pageBookmarks.isNotEmpty) ...[
+              Text(
+                'فواصل الصفحات',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(20),
+              const SizedBox(height: 8),
+              ...pageBookmarks.map((pageNumber) {
+                final start = _findFirstVerseForPage(pageNumber);
+                final surahNumber = start.$1;
+                final verseNumber = start.$2;
+                return _buildBookmarkCard(
+                  context: context,
+                  theme: theme,
+                  title: 'صفحة $pageNumber',
+                  subtitle:
+                      'تبدأ من ${quran.getSurahNameArabic(surahNumber)} - آية $verseNumber',
+                  badgeText: '$pageNumber',
                   onTap: () {
                     Navigator.push(
                       context,
@@ -897,84 +899,166 @@ class _QuranIndexPageState extends State<QuranIndexPage>
                       ),
                     );
                   },
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 50,
-                          height: 50,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                theme.colorScheme.secondary.withValues(
-                                  alpha: 0.2,
-                                ),
-                                theme.colorScheme.secondary.withValues(
-                                  alpha: 0.1,
-                                ),
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(15),
-                          ),
-                          child: Center(
-                            child: Text(
-                              '$verseNumber',
-                              style: TextStyle(
-                                color: theme.colorScheme.secondary,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                              ),
-                            ),
-                          ),
+                  onDelete: () {
+                    pageBookmarks.remove(pageNumber);
+                    box.put('page_bookmarks', pageBookmarks);
+                  },
+                );
+              }),
+              const SizedBox(height: 12),
+            ],
+            if (verseBookmarks.isNotEmpty) ...[
+              Text(
+                'فواصل الآيات',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...verseBookmarks.map((bookmark) {
+                final parts = bookmark.split(':');
+                final surahNumber = int.parse(parts[0]);
+                final verseNumber = int.parse(parts[1]);
+                return _buildBookmarkCard(
+                  context: context,
+                  theme: theme,
+                  title: isAr
+                      ? quran.getSurahNameArabic(surahNumber)
+                      : quran.getSurahName(surahNumber),
+                  subtitle: '${localizations.translate('verse')} $verseNumber',
+                  badgeText: '$verseNumber',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => QuranReaderPage(
+                          initialSurahNumber: surahNumber,
+                          initialVerseNumber: verseNumber,
                         ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                isAr
-                                    ? quran.getSurahNameArabic(surahNumber)
-                                    : quran.getSurahName(surahNumber),
-                                style: GoogleFonts.amiri(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: theme.colorScheme.onSurface,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                '${localizations.translate('verse')} $verseNumber',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.textTheme.bodySmall?.color
-                                      ?.withValues(alpha: 0.7),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          icon: Icon(
-                            Icons.delete_outline,
-                            color: theme.colorScheme.error,
-                          ),
-                          onPressed: () {
-                            bookmarks.removeAt(index);
-                            box.put('verse_bookmarks', bookmarks);
-                          },
-                        ),
+                      ),
+                    );
+                  },
+                  onDelete: () {
+                    verseBookmarks.remove(bookmark);
+                    box.put('verse_bookmarks', verseBookmarks);
+                  },
+                );
+              }),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  (int, int) _findFirstVerseForPage(int pageNumber) {
+    final cached = _pageStartCache[pageNumber];
+    if (cached != null) return (cached.$1, cached.$2);
+
+    for (int s = 1; s <= 114; s++) {
+      final verseCount = quran.getVerseCount(s);
+      for (int v = 1; v <= verseCount; v++) {
+        final page = quran.getPageNumber(s, v);
+        if (page == pageNumber) {
+          _pageStartCache[pageNumber] = (s, v);
+          return (s, v);
+        }
+      }
+    }
+    return (1, 1);
+  }
+
+  Widget _buildBookmarkCard({
+    required BuildContext context,
+    required ThemeData theme,
+    required String title,
+    required String subtitle,
+    required String badgeText,
+    required VoidCallback onTap,
+    required VoidCallback onDelete,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        theme.colorScheme.secondary.withValues(alpha: 0.2),
+                        theme.colorScheme.secondary.withValues(alpha: 0.1),
                       ],
+                    ),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Center(
+                    child: Text(
+                      badgeText,
+                      style: TextStyle(
+                        color: theme.colorScheme.secondary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            );
-          },
-        );
-      },
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: GoogleFonts.amiri(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: theme.colorScheme.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.textTheme.bodySmall?.color?.withValues(
+                            alpha: 0.7,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: theme.colorScheme.error,
+                  ),
+                  onPressed: onDelete,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
