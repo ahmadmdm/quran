@@ -62,7 +62,6 @@ class AppTheme {
           colors: [Color(0xFF1A237E), Color(0xFF0D47A1), Color(0xFF1565C0)],
         );
       case Prayer.none:
-      default:
         return const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,

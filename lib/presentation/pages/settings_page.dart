@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:adhan/adhan.dart';
 import '../../core/localization/app_localizations.dart';
 import '../../core/utils/location_service.dart';
+import '../../core/utils/notification_sound_support.dart';
 import '../providers/locale_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/prayer_provider.dart';
@@ -74,7 +75,7 @@ class SettingsPage extends ConsumerWidget {
             subtitle: LocationService.getAccuracyDescription(
               LocationService.accuracyLevel,
             ),
-            onTap: () => _handleGpsAccuracyTap(context, ref, localizations),
+            onTap: () => _handleGpsAccuracyTap(context, ref),
           ),
           _buildSettingsTile(
             context,
@@ -205,26 +206,22 @@ class SettingsPage extends ConsumerWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            RadioListTile<bool>(
+            _buildChoiceTile(
+              context,
               title: Text(localizations.translate('twelve_hour')),
-              value: false,
-              groupValue: settings.use24hFormat,
-              onChanged: (value) {
-                if (value != null) {
-                  ref.read(settingsProvider.notifier).setUse24hFormat(value);
-                  Navigator.pop(context);
-                }
+              selected: settings.use24hFormat == false,
+              onTap: () {
+                ref.read(settingsProvider.notifier).setUse24hFormat(false);
+                Navigator.pop(context);
               },
             ),
-            RadioListTile<bool>(
+            _buildChoiceTile(
+              context,
               title: Text(localizations.translate('twenty_four_hour')),
-              value: true,
-              groupValue: settings.use24hFormat,
-              onChanged: (value) {
-                if (value != null) {
-                  ref.read(settingsProvider.notifier).setUse24hFormat(value);
-                  Navigator.pop(context);
-                }
+              selected: settings.use24hFormat == true,
+              onTap: () {
+                ref.read(settingsProvider.notifier).setUse24hFormat(true);
+                Navigator.pop(context);
               },
             ),
           ],
@@ -309,11 +306,7 @@ class SettingsPage extends ConsumerWidget {
     );
   }
 
-  void _handleGpsAccuracyTap(
-    BuildContext context,
-    WidgetRef ref,
-    AppLocalizations localizations,
-  ) {
+  void _handleGpsAccuracyTap(BuildContext context, WidgetRef ref) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -321,7 +314,8 @@ class SettingsPage extends ConsumerWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: GpsAccuracyLevel.values.map((level) {
-            return RadioListTile<GpsAccuracyLevel>(
+            return _buildChoiceTile(
+              context,
               title: Text(LocationService.getAccuracyDescription(level)),
               subtitle: Text(
                 LocationService.getAccuracyRange(level),
@@ -330,25 +324,22 @@ class SettingsPage extends ConsumerWidget {
                   color: Theme.of(context).textTheme.bodySmall?.color,
                 ),
               ),
-              value: level,
-              groupValue: LocationService.accuracyLevel,
-              onChanged: (value) {
-                if (value != null) {
-                  LocationService.setAccuracyLevel(value);
-                  Navigator.pop(context);
+              selected: LocationService.accuracyLevel == level,
+              onTap: () {
+                LocationService.setAccuracyLevel(level);
+                Navigator.pop(context);
 
-                  // Refresh location with new accuracy
-                  ref.invalidate(userLocationProvider);
+                // Refresh location with new accuracy
+                ref.invalidate(userLocationProvider);
 
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'تم تغيير دقة GPS إلى: ${LocationService.getAccuracyDescription(value)}',
-                      ),
-                      behavior: SnackBarBehavior.floating,
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'تم تغيير دقة GPS إلى: ${LocationService.getAccuracyDescription(level)}',
                     ),
-                  );
-                }
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
               },
             );
           }).toList(),
@@ -386,7 +377,9 @@ class SettingsPage extends ConsumerWidget {
                 },
               ),
               SwitchListTile(
-                title: Text(localizations.translate('notification_prayer_time')),
+                title: Text(
+                  localizations.translate('notification_prayer_time'),
+                ),
                 subtitle: const Text('تنبيه عند دخول وقت الصلاة'),
                 value: currentSettings.prayerTimeNotificationsEnabled,
                 onChanged: (value) async {
@@ -507,20 +500,18 @@ class SettingsPage extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [5, 10, 15, 20, 30, 45, 60].map((duration) {
-              return RadioListTile<int>(
+              return _buildChoiceTile(
+                context,
                 title: Text(
                   '$duration ${localizations.translate('minutes_short')}',
                 ),
-                value: duration,
-                groupValue: settings.preAzanReminderOffset,
-                onChanged: (value) {
-                  if (value != null) {
-                    ref
-                        .read(settingsProvider.notifier)
-                        .setPreAzanReminderOffset(value);
-                    Navigator.pop(context);
-                    _applyNotificationSettings(ref);
-                  }
+                selected: settings.preAzanReminderOffset == duration,
+                onTap: () {
+                  ref
+                      .read(settingsProvider.notifier)
+                      .setPreAzanReminderOffset(duration);
+                  Navigator.pop(context);
+                  _applyNotificationSettings(ref);
                 },
               );
             }).toList(),
@@ -547,20 +538,18 @@ class SettingsPage extends ConsumerWidget {
             itemCount: CalculationMethod.values.length,
             itemBuilder: (context, index) {
               final method = CalculationMethod.values[index];
-              return RadioListTile<CalculationMethod>(
+              return _buildChoiceTile(
+                context,
                 title: Text(
                   _formatCalculationMethod(method),
                   style: const TextStyle(fontSize: 14),
                 ),
-                value: method,
-                groupValue: settings.calculationMethod,
-                onChanged: (value) {
-                  if (value != null) {
-                    ref
-                        .read(settingsProvider.notifier)
-                        .setCalculationMethod(value);
-                    Navigator.pop(context);
-                  }
+                selected: settings.calculationMethod == method,
+                onTap: () {
+                  ref
+                      .read(settingsProvider.notifier)
+                      .setCalculationMethod(method);
+                  Navigator.pop(context);
                 },
               );
             },
@@ -583,19 +572,17 @@ class SettingsPage extends ConsumerWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: Madhab.values.map((madhab) {
-            return RadioListTile<Madhab>(
+            return _buildChoiceTile(
+              context,
               title: Text(
                 madhab == Madhab.shafi
                     ? localizations.translate('shafi')
                     : localizations.translate('hanafi'),
               ),
-              value: madhab,
-              groupValue: settings.madhab,
-              onChanged: (value) {
-                if (value != null) {
-                  ref.read(settingsProvider.notifier).setMadhab(value);
-                  Navigator.pop(context);
-                }
+              selected: settings.madhab == madhab,
+              onTap: () {
+                ref.read(settingsProvider.notifier).setMadhab(madhab);
+                Navigator.pop(context);
               },
             );
           }).toList(),
@@ -617,37 +604,37 @@ class SettingsPage extends ConsumerWidget {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            RadioListTile<ThemeMode>(
+            _buildChoiceTile(
+              context,
               title: Text(localizations.translate('dark_mode')),
-              value: ThemeMode.dark,
-              groupValue: settings.themeMode,
-              onChanged: (value) {
-                if (value != null) {
-                  ref.read(settingsProvider.notifier).setThemeMode(value);
-                  Navigator.pop(context);
-                }
+              selected: settings.themeMode == ThemeMode.dark,
+              onTap: () {
+                ref
+                    .read(settingsProvider.notifier)
+                    .setThemeMode(ThemeMode.dark);
+                Navigator.pop(context);
               },
             ),
-            RadioListTile<ThemeMode>(
+            _buildChoiceTile(
+              context,
               title: Text(localizations.translate('light_mode')),
-              value: ThemeMode.light,
-              groupValue: settings.themeMode,
-              onChanged: (value) {
-                if (value != null) {
-                  ref.read(settingsProvider.notifier).setThemeMode(value);
-                  Navigator.pop(context);
-                }
+              selected: settings.themeMode == ThemeMode.light,
+              onTap: () {
+                ref
+                    .read(settingsProvider.notifier)
+                    .setThemeMode(ThemeMode.light);
+                Navigator.pop(context);
               },
             ),
-            RadioListTile<ThemeMode>(
+            _buildChoiceTile(
+              context,
               title: Text(localizations.translate('system_default')),
-              value: ThemeMode.system,
-              groupValue: settings.themeMode,
-              onChanged: (value) {
-                if (value != null) {
-                  ref.read(settingsProvider.notifier).setThemeMode(value);
-                  Navigator.pop(context);
-                }
+              selected: settings.themeMode == ThemeMode.system,
+              onTap: () {
+                ref
+                    .read(settingsProvider.notifier)
+                    .setThemeMode(ThemeMode.system);
+                Navigator.pop(context);
               },
             ),
           ],
@@ -703,7 +690,7 @@ class SettingsPage extends ConsumerWidget {
   }
 
   String _getSoundName(String sound) {
-    switch (sound) {
+    switch (normalizeNotificationSound(sound)) {
       case 'azan':
         return 'Azan (Custom)';
       case 'system':
@@ -711,7 +698,7 @@ class SettingsPage extends ConsumerWidget {
       case 'silent':
         return 'Silent';
       default:
-        return 'Azan (Custom)';
+        return 'System Sound';
     }
   }
 
@@ -727,7 +714,8 @@ class SettingsPage extends ConsumerWidget {
         .schedulePrayers(
           prayerTimes,
           notificationsEnabled: settings.areNotificationsEnabled,
-          prayerTimeNotificationsEnabled: settings.prayerTimeNotificationsEnabled,
+          prayerTimeNotificationsEnabled:
+              settings.prayerTimeNotificationsEnabled,
           prePrayerRemindersEnabled: settings.prePrayerRemindersEnabled,
           preAzanReminderOffset: settings.preAzanReminderOffset,
           notificationSound: settings.notificationSound,
@@ -736,7 +724,10 @@ class SettingsPage extends ConsumerWidget {
         );
   }
 
-  Future<void> _handleNotificationToggle(BuildContext context, WidgetRef ref) async {
+  Future<void> _handleNotificationToggle(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
     final settings = ref.read(settingsProvider);
     await ref
         .read(settingsProvider.notifier)
@@ -828,7 +819,10 @@ class SettingsPage extends ConsumerWidget {
             onPressed: () async {
               final lat = double.tryParse(latController.text.trim());
               final lng = double.tryParse(lngController.text.trim());
-              if (lat == null || lng == null || lat.abs() > 90 || lng.abs() > 180) {
+              if (lat == null ||
+                  lng == null ||
+                  lat.abs() > 90 ||
+                  lng.abs() > 180) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('إحداثيات غير صالحة')),
                 );
@@ -862,62 +856,75 @@ class SettingsPage extends ConsumerWidget {
     SettingsState settings,
     AppLocalizations localizations,
   ) {
+    final availableSounds = availableNotificationSounds();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(
-          localizations.translate('notification_sound'),
-        ),
+        title: Text(localizations.translate('notification_sound')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            RadioListTile<String>(
-              title: Text(localizations.translate('azan')),
-              value: 'azan',
-              groupValue: settings.notificationSound,
-              onChanged: (value) {
-                if (value != null) {
+            if (availableSounds.contains('azan'))
+              _buildChoiceTile(
+                context,
+                title: Text(localizations.translate('azan')),
+                selected: settings.notificationSound == 'azan',
+                onTap: () {
                   ref
                       .read(settingsProvider.notifier)
-                      .setNotificationSound(value);
+                      .setNotificationSound('azan');
                   _applyNotificationSettings(ref);
                   Navigator.pop(context);
-                }
-              },
-            ),
-            RadioListTile<String>(
-              title: Text(
-                localizations.translate('system_sound'),
+                },
               ),
-              value: 'system',
-              groupValue: settings.notificationSound,
-              onChanged: (value) {
-                if (value != null) {
-                  ref
-                      .read(settingsProvider.notifier)
-                      .setNotificationSound(value);
-                  _applyNotificationSettings(ref);
-                  Navigator.pop(context);
-                }
+            _buildChoiceTile(
+              context,
+              title: Text(localizations.translate('system_sound')),
+              selected: settings.notificationSound == 'system',
+              onTap: () {
+                ref
+                    .read(settingsProvider.notifier)
+                    .setNotificationSound('system');
+                _applyNotificationSettings(ref);
+                Navigator.pop(context);
               },
             ),
-            RadioListTile<String>(
+            _buildChoiceTile(
+              context,
               title: Text(localizations.translate('silent')),
-              value: 'silent',
-              groupValue: settings.notificationSound,
-              onChanged: (value) {
-                if (value != null) {
-                  ref
-                      .read(settingsProvider.notifier)
-                      .setNotificationSound(value);
-                  _applyNotificationSettings(ref);
-                  Navigator.pop(context);
-                }
+              selected: settings.notificationSound == 'silent',
+              onTap: () {
+                ref
+                    .read(settingsProvider.notifier)
+                    .setNotificationSound('silent');
+                _applyNotificationSettings(ref);
+                Navigator.pop(context);
               },
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildChoiceTile(
+    BuildContext context, {
+    required Widget title,
+    Widget? subtitle,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: title,
+      subtitle: subtitle,
+      leading: Icon(
+        selected ? Icons.radio_button_checked : Icons.radio_button_off,
+        color: selected
+            ? Theme.of(context).colorScheme.secondary
+            : Theme.of(context).disabledColor,
+      ),
+      onTap: onTap,
     );
   }
 }

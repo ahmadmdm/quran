@@ -19,7 +19,6 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
 
   // Wird settings
   int _dailyPages = 5; // Default 5 pages per day
-  int _khatmaGoalDays = 30; // Complete Quran in 30 days
 
   @override
   void initState() {
@@ -30,7 +29,6 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
 
   void _loadSettings() {
     _dailyPages = _settingsBox.get('daily_wird_pages', defaultValue: 5);
-    _khatmaGoalDays = _settingsBox.get('khatma_goal_days', defaultValue: 30);
   }
 
   @override
@@ -162,8 +160,6 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
   }
 
   Widget _buildDailyWirdTab(BuildContext context) {
-    final theme = Theme.of(context);
-
     return ValueListenableBuilder(
       valueListenable: _settingsBox.listenable(
         keys: [
@@ -207,9 +203,7 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
           defaultValue: currentPage,
         );
 
-        // Calculate progress
         final totalPages = 604; // Total pages in Quran
-        final progress = currentPage / totalPages;
 
         return SingleChildScrollView(
           padding: const EdgeInsets.all(20),
@@ -332,7 +326,6 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
     bool completedToday,
   ) {
     final theme = Theme.of(context);
-    final todayProgress = completedToday ? 1.0 : 0.0;
     final endPage = startPage + _dailyPages - 1;
 
     return Container(
@@ -679,8 +672,6 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
   }
 
   Widget _buildKhatmaTab(BuildContext context) {
-    final theme = Theme.of(context);
-
     return ValueListenableBuilder(
       valueListenable: _settingsBox.listenable(
         keys: ['khatma_list', 'current_khatma_id'],

@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:home_widget/home_widget.dart';
 
 class WidgetService {
-  static const String _groupId = 'group.com.luxury.prayer';
-  static const String _androidWidgetName = 'MinimalWidgetProvider';
-
   // All widget provider names
   static const List<String> _allWidgets = [
     'MinimalWidgetProvider',
@@ -176,9 +173,9 @@ class WidgetService {
     final fontSize = double.tryParse(fontSizeString ?? '56.0') ?? 56.0;
 
     return {
-      'backgroundColor': int.parse(bgColorHex!.replaceFirst('#', '0xFF')),
-      'textColor': int.parse(textColorHex!.replaceFirst('#', '0xFF')),
-      'accentColor': int.parse(accentColorHex!.replaceFirst('#', '0xFF')),
+      'backgroundColor': parseWidgetColorHex(bgColorHex, 0xFF0F1629),
+      'textColor': parseWidgetColorHex(textColorHex, 0xFFFFFFFF),
+      'accentColor': parseWidgetColorHex(accentColorHex, 0xFFC9A24D),
       'opacity': opacity,
       'fontStyle': fontStyle,
       'fontSize': fontSize,
@@ -196,9 +193,9 @@ class WidgetService {
     String? widgetType, // Add widgetType parameter
   }) async {
     await saveWidgetSettings(
-      backgroundColor: backgroundColor.value,
-      textColor: textColor.value,
-      accentColor: accentColor.value,
+      backgroundColor: backgroundColor.toARGB32(),
+      textColor: textColor.toARGB32(),
+      accentColor: accentColor.toARGB32(),
       opacity: opacity,
       fontStyle: fontStyle,
       fontSize: fontSize,
@@ -212,7 +209,7 @@ class WidgetService {
         await HomeWidget.updateWidget(androidName: widgetName);
       } catch (e) {
         // Widget might not exist, ignore error
-        print('Failed to update widget $widgetName: $e');
+        debugPrint('Failed to update widget $widgetName: $e');
       }
     }
   }
@@ -254,7 +251,7 @@ class WidgetService {
     try {
       await HomeWidget.updateWidget(androidName: 'QuranVerseWidgetProvider');
     } catch (e) {
-      print('Failed to update Quran widget: $e');
+      debugPrint('Failed to update Quran widget: $e');
     }
   }
 
@@ -264,5 +261,13 @@ class WidgetService {
         _widgetTypeToSlug[widgetType] ??
         widgetType.toLowerCase().replaceAll(' ', '_');
     return '${slug}_';
+  }
+
+  static int parseWidgetColorHex(String? colorHex, int fallback) {
+    if (colorHex == null || colorHex.isEmpty) return fallback;
+    final normalized = colorHex.trim().replaceFirst('#', '');
+    if (normalized.length != 8) return fallback;
+    final parsed = int.tryParse('0x$normalized');
+    return parsed ?? fallback;
   }
 }

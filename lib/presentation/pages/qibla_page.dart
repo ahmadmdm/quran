@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter/services.dart';
-import '../../core/theme/app_theme.dart';
-import '../../core/localization/app_localizations.dart';
 import '../providers/prayer_provider.dart';
 
 class QiblaPage extends ConsumerStatefulWidget {
@@ -26,12 +24,14 @@ class _QiblaPageState extends ConsumerState<QiblaPage>
   StreamSubscription<CompassEvent>? _compassSubscription;
 
   // Calibration state
-  bool _isCalibrating = false;
+  final bool _isCalibrating = false;
   bool _needsCalibration = false;
-  double _calibrationProgress = 0;
+  final double _calibrationProgress = 0;
 
   // Accuracy indicator
   double _accuracy = 0;
+  bool _wasAligned = false;
+  DateTime _lastHapticAt = DateTime.fromMillisecondsSinceEpoch(0);
 
   @override
   void initState() {
@@ -155,9 +155,7 @@ class _QiblaPageState extends ConsumerState<QiblaPage>
   @override
   Widget build(BuildContext context) {
     final qiblaAsync = ref.watch(qiblaDirectionProvider);
-    final localizations = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
@@ -225,13 +223,19 @@ class _QiblaPageState extends ConsumerState<QiblaPage>
   }
 
   Widget _buildQiblaContent(BuildContext context, double qiblaDir) {
-    final theme = Theme.of(context);
     final diff = (qiblaDir - _heading).abs();
     final isAligned = diff < 3 || diff > 357;
 
-    if (isAligned) {
+    final now = DateTime.now();
+    final shouldHaptic =
+        isAligned &&
+        (!_wasAligned ||
+            now.difference(_lastHapticAt) > const Duration(seconds: 1));
+    if (shouldHaptic) {
       HapticFeedback.selectionClick();
+      _lastHapticAt = now;
     }
+    _wasAligned = isAligned;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -315,7 +319,10 @@ class _QiblaPageState extends ConsumerState<QiblaPage>
             offset: const Offset(0, 5),
           ),
         ],
-        border: Border.all(color: accuracyColor.withOpacity(0.3), width: 1.5),
+        border: Border.all(
+          color: accuracyColor.withValues(alpha: 0.3),
+          width: 1.5,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -324,7 +331,7 @@ class _QiblaPageState extends ConsumerState<QiblaPage>
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: accuracyColor.withOpacity(0.15),
+              color: accuracyColor.withValues(alpha: 0.15),
               shape: BoxShape.circle,
             ),
             child: Icon(
@@ -354,7 +361,9 @@ class _QiblaPageState extends ConsumerState<QiblaPage>
               Text(
                 'الدقة: $accuracyPercent% ($accuracyDetail)',
                 style: TextStyle(
-                  color: theme.textTheme.bodySmall?.color?.withOpacity(0.7),
+                  color: theme.textTheme.bodySmall?.color?.withValues(
+                    alpha: 0.7,
+                  ),
                   fontSize: 11,
                 ),
               ),
@@ -379,7 +388,7 @@ class _QiblaPageState extends ConsumerState<QiblaPage>
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            accuracyColor.withOpacity(0.7),
+                            accuracyColor.withValues(alpha: 0.7),
                             accuracyColor,
                           ],
                         ),
@@ -733,8 +742,6 @@ class _QiblaPageState extends ConsumerState<QiblaPage>
   }
 
   Widget _buildCalibrationButton(BuildContext context) {
-    final theme = Theme.of(context);
-
     return GestureDetector(
       onTap: _startCalibration,
       child: Container(

@@ -57,6 +57,7 @@ dependencies:
   device_info_plus: ^11.2.0
   hijri_calendar: ^1.0.2
   flutter_compass: ^0.8.1
+  flutter_timezone: ^4.1.1
 
 dev_dependencies:
   flutter_test:

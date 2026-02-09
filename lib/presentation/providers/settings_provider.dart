@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:adhan/adhan.dart';
+import '../../core/utils/notification_sound_support.dart';
 
 class SettingsState {
   final CalculationMethod calculationMethod;
@@ -123,7 +124,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
           use24hFormat: false,
           largeText: false,
           alwaysShowHomeCards: false,
-          notificationSound: 'azan',
+          notificationSound: normalizeNotificationSound('azan'),
           vibrationEnabled: true,
           prayerTimeNotificationsEnabled: true,
           prePrayerRemindersEnabled: true,
@@ -165,9 +166,11 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final largeTextEnabled =
         (box.get('largeText', defaultValue: false) as bool?) ?? false;
     final alwaysShowHomeCards =
-        (box.get('alwaysShowHomeCards', defaultValue: false) as bool?) ??
-        false;
-    final sound = box.get('notificationSound', defaultValue: 'azan');
+        (box.get('alwaysShowHomeCards', defaultValue: false) as bool?) ?? false;
+    final storedSound = box.get('notificationSound', defaultValue: 'azan');
+    final sound = normalizeNotificationSound(
+      storedSound is String ? storedSound : null,
+    );
     final vib =
         (box.get('vibrationEnabled', defaultValue: true) as bool?) ?? true;
     final prayerTimeNotificationsEnabled =
@@ -208,7 +211,9 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       orElse: () => Madhab.shafi,
     );
 
-    ThemeMode themeMode = ThemeMode.values[themeModeIndex];
+    final themeMode = SettingsNotifier.themeModeFromStorageIndex(
+      themeModeIndex,
+    );
 
     state = SettingsState(
       calculationMethod: calcMethod,
@@ -284,9 +289,10 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
   }
 
   Future<void> setNotificationSound(String sound) async {
-    state = state.copyWith(notificationSound: sound);
+    final normalized = normalizeNotificationSound(sound);
+    state = state.copyWith(notificationSound: normalized);
     final box = Hive.box(_boxName);
-    await box.put('notificationSound', sound);
+    await box.put('notificationSound', normalized);
   }
 
   Future<void> setVibrationEnabled(bool enabled) async {
@@ -362,6 +368,14 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     state = state.copyWith(useManualLocation: false);
     final box = Hive.box(_boxName);
     await box.put('useManualLocation', false);
+  }
+
+  static ThemeMode themeModeFromStorageIndex(Object? index) {
+    final value = index is int ? index : ThemeMode.light.index;
+    if (value < 0 || value >= ThemeMode.values.length) {
+      return ThemeMode.light;
+    }
+    return ThemeMode.values[value];
   }
 }
 

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
-import '../../core/localization/app_localizations.dart';
 
 class AzkarPage extends StatefulWidget {
   const AzkarPage({super.key});
@@ -269,7 +268,6 @@ class _AzkarPageState extends State<AzkarPage>
 
   @override
   Widget build(BuildContext context) {
-    final localizations = AppLocalizations.of(context)!;
     final isMorning = DateTime.now().hour < 12;
 
     return Scaffold(

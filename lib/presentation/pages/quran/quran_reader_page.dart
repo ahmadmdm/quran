@@ -708,7 +708,8 @@ $verseText
                           padding: const EdgeInsets.fromLTRB(12, 6, 12, 78),
                           child: PageView.builder(
                             controller: _pageController,
-                            reverse: true,
+                            reverse:
+                                Directionality.of(context) == TextDirection.ltr,
                             onPageChanged: (index) =>
                                 _handlePageChanged(index + 1),
                             itemCount: 604,

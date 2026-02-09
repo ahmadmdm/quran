@@ -1,11 +1,14 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tzdata;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:adhan/adhan.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'notification_sound_support.dart';
 
 class NotificationService {
   static const platform = MethodChannel('com.luxury.prayer/countdown');
@@ -19,19 +22,14 @@ class NotificationService {
   Future<void> init() async {
     if (_isInitialized) return;
 
-    try {
-      tzdata.initializeTimeZones();
-      tz.setLocalLocation(tz.getLocation('Asia/Riyadh'));
-    } catch (e) {
-      print('Timezone initialization error: $e');
-    }
+    await _initializeLocalTimezone();
 
     // Get Android SDK version for compatibility
     if (Platform.isAndroid) {
       final deviceInfo = DeviceInfoPlugin();
       final androidInfo = await deviceInfo.androidInfo;
       _androidSdkVersion = androidInfo.version.sdkInt;
-      print('Android SDK Version: $_androidSdkVersion');
+      debugPrint('Android SDK Version: $_androidSdkVersion');
     }
 
     const AndroidInitializationSettings initializationSettingsAndroid =
@@ -65,13 +63,13 @@ class NotificationService {
 
   void _onNotificationTapped(NotificationResponse response) {
     // Handle notification tap - can navigate to specific screen
-    print('Notification tapped: ${response.payload}');
+    debugPrint('Notification tapped: ${response.payload}');
   }
 
   @pragma('vm:entry-point')
   static void _onBackgroundNotificationTapped(NotificationResponse response) {
     // Handle background notification tap
-    print('Background notification tapped: ${response.payload}');
+    debugPrint('Background notification tapped: ${response.payload}');
   }
 
   Future<void> _createNotificationChannels() async {
@@ -90,7 +88,9 @@ class NotificationService {
         description: 'إشعارات وقت الصلاة مع صوت الأذان',
         importance: Importance.max,
         playSound: true,
-        sound: const RawResourceAndroidNotificationSound('azan'),
+        sound: kHasBundledAzanSound
+            ? const RawResourceAndroidNotificationSound('azan')
+            : null,
         enableVibration: true,
         enableLights: true,
         ledColor: const Color.fromARGB(255, 201, 162, 77),
@@ -141,8 +141,10 @@ class NotificationService {
 
     // Dynamic channels for customization
     final channels = [
-      ('azan_sound_vibrate_v2', 'أذان مع اهتزاز', true, true, 'azan'),
-      ('azan_sound_no_vibrate_v2', 'أذان بدون اهتزاز', true, false, 'azan'),
+      if (kHasBundledAzanSound)
+        ('azan_sound_vibrate_v2', 'أذان مع اهتزاز', true, true, 'azan'),
+      if (kHasBundledAzanSound)
+        ('azan_sound_no_vibrate_v2', 'أذان بدون اهتزاز', true, false, 'azan'),
       ('system_sound_vibrate_v2', 'صوت النظام مع اهتزاز', true, true, null),
       (
         'system_sound_no_vibrate_v2',
@@ -183,7 +185,7 @@ class NotificationService {
 
       // Request notification permission (Android 13+)
       final notificationStatus = await Permission.notification.request();
-      print('Notification permission: $notificationStatus');
+      debugPrint('Notification permission: $notificationStatus');
 
       // Request exact alarm permission for Android 12+
       await platform?.requestNotificationsPermission();
@@ -204,7 +206,7 @@ class NotificationService {
       if (_androidSdkVersion >= 34) {
         // Full screen intent permission is automatically granted for alarm apps
         // but we should check and handle it
-        print('Android 14+ detected, full screen intent handling enabled');
+        debugPrint('Android 14+ detected, full screen intent handling enabled');
       }
 
       // Request ignore battery optimizations for reliable notifications
@@ -248,7 +250,7 @@ class NotificationService {
     bool prayerTimeNotificationsEnabled = true,
     bool prePrayerRemindersEnabled = true,
     int preAzanReminderOffset = 15,
-    String notificationSound = 'azan',
+    String notificationSound = 'system',
     bool vibrationEnabled = true,
     Set<Prayer>? enabledPrayers,
   }) async {
@@ -258,21 +260,21 @@ class NotificationService {
     await cancelAll();
 
     if (!notificationsEnabled) {
-      print('Notifications disabled, skipping scheduling');
+      debugPrint('Notifications disabled, skipping scheduling');
       return;
     }
 
     // Check if notifications are actually enabled at system level
     final enabled = await areNotificationsEnabled();
     if (!enabled) {
-      print('System notifications disabled');
+      debugPrint('System notifications disabled');
       return;
     }
 
     // Check if we can schedule exact alarms (Android 12+)
     final canScheduleExact = await canScheduleExactAlarms();
     if (!canScheduleExact) {
-      print('Cannot schedule exact alarms, requesting permission');
+      debugPrint('Cannot schedule exact alarms, requesting permission');
       await _requestPermissions();
     }
 
@@ -349,7 +351,7 @@ class NotificationService {
     // Start native countdown service
     await _startCountdownService(prayerTimes);
 
-    print('Scheduled $notificationId notifications');
+    debugPrint('Scheduled $notificationId notifications');
   }
 
   Future<void> _scheduleNotification({
@@ -370,16 +372,17 @@ class NotificationService {
     AndroidNotificationSound? sound;
     bool playSound = true;
     bool enableVibration = vibrate;
+    final resolvedSoundType = _resolvePreferredSound(soundType);
 
     if (isAzan) {
-      if (soundType == 'azan') {
+      if (resolvedSoundType == 'azan') {
         channelId = vibrate
             ? 'azan_sound_vibrate_v2'
             : 'azan_sound_no_vibrate_v2';
         channelName = 'إشعارات الأذان';
         channelDesc = 'إشعارات وقت الصلاة مع صوت الأذان';
         sound = const RawResourceAndroidNotificationSound('azan');
-      } else if (soundType == 'silent') {
+      } else if (resolvedSoundType == 'silent') {
         channelId = vibrate ? 'silent_vibrate_v2' : 'silent_no_vibrate_v2';
         channelName = 'إشعارات صامتة';
         channelDesc = 'إشعارات صامتة';
@@ -393,7 +396,7 @@ class NotificationService {
         sound = null;
       }
     } else {
-      if (soundType == 'silent') {
+      if (resolvedSoundType == 'silent') {
         channelId = vibrate ? 'silent_vibrate_v2' : 'silent_no_vibrate_v2';
         channelName = 'تذكيرات صامتة';
         channelDesc = 'تذكيرات صامتة';
@@ -482,7 +485,7 @@ class NotificationService {
             presentAlert: true,
             presentBadge: true,
             presentSound: playSound,
-            sound: isAzan && soundType == 'azan' ? 'azan.caf' : null,
+            sound: isAzan && resolvedSoundType == 'azan' ? 'azan.caf' : null,
             interruptionLevel: isAzan
                 ? InterruptionLevel.timeSensitive
                 : InterruptionLevel.active,
@@ -494,11 +497,11 @@ class NotificationService {
         payload: payload,
       );
 
-      print(
+      debugPrint(
         'Scheduled notification $id for $scheduledTime (mode: $scheduleMode)',
       );
     } catch (e) {
-      print('Error scheduling notification: $e');
+      debugPrint('Error scheduling notification: $e');
     }
   }
 
@@ -523,7 +526,7 @@ class NotificationService {
         'target_time': nextTime.millisecondsSinceEpoch,
       });
     } on PlatformException catch (e) {
-      print("Failed to start countdown service: '${e.message}'.");
+      debugPrint("Failed to start countdown service: '${e.message}'.");
     }
   }
 
@@ -631,5 +634,27 @@ class NotificationService {
     if (await Permission.ignoreBatteryOptimizations.isDenied) {
       await Permission.ignoreBatteryOptimizations.request();
     }
+  }
+
+  Future<void> _initializeLocalTimezone() async {
+    try {
+      tzdata.initializeTimeZones();
+      final timezoneName = await FlutterTimezone.getLocalTimezone();
+      tz.setLocalLocation(tz.getLocation(timezoneName));
+      debugPrint('Timezone initialized: $timezoneName');
+    } catch (e) {
+      try {
+        final fallbackName = DateTime.now().timeZoneName;
+        tz.setLocalLocation(tz.getLocation(fallbackName));
+        debugPrint('Timezone fallback initialized: $fallbackName');
+      } catch (_) {
+        tz.setLocalLocation(tz.UTC);
+        debugPrint('Timezone fallback initialized: UTC');
+      }
+    }
+  }
+
+  String _resolvePreferredSound(String requestedSound) {
+    return normalizeNotificationSound(requestedSound);
   }
 }

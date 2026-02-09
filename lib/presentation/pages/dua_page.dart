@@ -2,15 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:share_plus/share_plus.dart';
-import '../../core/localization/app_localizations.dart';
 
 class DuaPage extends StatelessWidget {
   const DuaPage({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final localizations = AppLocalizations.of(context)!;
-
     // Arabic duas with translations
     final List<Map<String, dynamic>> duaCategories = [
       {

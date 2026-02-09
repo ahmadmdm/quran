@@ -72,10 +72,11 @@ class LocationService {
       );
     }
 
-    return await Geolocator.getCurrentPosition(
-      desiredAccuracy: _getLocationAccuracy(),
+    final settings = LocationSettings(
+      accuracy: _getLocationAccuracy(),
       timeLimit: _getTimeout(),
     );
+    return await Geolocator.getCurrentPosition(locationSettings: settings);
   }
 
   /// Get position with specific accuracy level (override default)
@@ -126,10 +127,11 @@ class LocationService {
         break;
     }
 
-    return await Geolocator.getCurrentPosition(
-      desiredAccuracy: geoAccuracy,
+    final settings = LocationSettings(
+      accuracy: geoAccuracy,
       timeLimit: timeout,
     );
+    return await Geolocator.getCurrentPosition(locationSettings: settings);
   }
 
   Future<String?> getCityName(Position position) async {
