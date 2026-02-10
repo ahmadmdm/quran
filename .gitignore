@@ -47,6 +47,8 @@ app.*.map.json
 # Android specific
 android/local.properties
 android/key.properties
+android/app/*.jks
+android/app/*.keystore
 android/app/google-services.json
 android/app/src/debug/google-services.json
 android/app/src/profile/google-services.json

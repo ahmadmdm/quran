@@ -655,6 +655,7 @@ class NotificationService {
   }
 
   Future<void> requestCriticalAlarmPermissions() async {
+    await init();
     if (!Platform.isAndroid) return;
 
     final platform = flutterLocalNotificationsPlugin

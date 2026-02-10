@@ -7,7 +7,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:quran/quran.dart' as quran;
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import '../../../../core/localization/app_localizations.dart';
+import '../../../core/services/tafsir_service.dart';
+import '../../../core/localization/app_localizations.dart';
 
 class QuranReaderPage extends StatefulWidget {
   final int initialSurahNumber;
@@ -32,7 +33,8 @@ enum ReaderMode { reading, hifz }
 class _QuranReaderPageState extends State<QuranReaderPage>
     with TickerProviderStateMixin {
   static const String _readerFontSizeKey = 'quran_reader_font_size';
-  static const String _readerShowTranslationKey = 'quran_reader_show_translation';
+  static const String _readerShowTranslationKey =
+      'quran_reader_show_translation';
   static const String _readerTopOptionsExpandedKey =
       'quran_reader_top_options_expanded';
 
@@ -492,7 +494,10 @@ class _QuranReaderPageState extends State<QuranReaderPage>
         (box.get('verse_bookmarks', defaultValue: <String>[]) as List)
             .cast<String>();
     final key = '$surahNumber:$verseNumber';
-    final detailsRaw = box.get('verse_bookmark_details', defaultValue: <String, dynamic>{});
+    final detailsRaw = box.get(
+      'verse_bookmark_details',
+      defaultValue: <String, dynamic>{},
+    );
     final details = Map<String, dynamic>.from(
       detailsRaw is Map ? detailsRaw : <String, dynamic>{},
     );
@@ -1088,7 +1093,11 @@ $verseText
   }
 
   Future<void> _showVerseActionsSheet(_PageVerse verse, ThemeData theme) async {
-    final isBookmarked = _isVerseBookmarked(verse.surahNumber, verse.verseNumber);
+    unawaited(_publishFoldLiveVerse(verse));
+    final isBookmarked = _isVerseBookmarked(
+      verse.surahNumber,
+      verse.verseNumber,
+    );
 
     await showModalBottomSheet<void>(
       context: context,
@@ -1131,10 +1140,23 @@ $verseText
                         : Icons.bookmark_add_rounded,
                     color: theme.colorScheme.secondary,
                   ),
-                  title: Text(isBookmarked ? 'إزالة الفاصل' : 'إضافة إلى الفواصل'),
+                  title: Text(
+                    isBookmarked ? 'إزالة الفاصل' : 'إضافة إلى الفواصل',
+                  ),
                   onTap: () async {
                     Navigator.pop(context);
-                    await _toggleVerseBookmark(verse.surahNumber, verse.verseNumber);
+                    await _toggleVerseBookmark(
+                      verse.surahNumber,
+                      verse.verseNumber,
+                    );
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.menu_book_rounded),
+                  title: const Text('تفسير الآية'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showTafsirSheet(verse, theme);
                   },
                 ),
                 ListTile(
@@ -1155,6 +1177,144 @@ $verseText
                 ),
                 const SizedBox(height: 8),
               ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _publishFoldLiveVerse(_PageVerse verse) async {
+    final box = Hive.box('settings');
+    await box.put('fold_live_surah', verse.surahNumber);
+    await box.put('fold_live_verse', verse.verseNumber);
+    await box.put('fold_live_text', verse.text);
+    await box.put('fold_live_updated_at', DateTime.now().toIso8601String());
+  }
+
+  Future<void> _showTafsirSheet(_PageVerse verse, ThemeData theme) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return SafeArea(
+          top: false,
+          child: FractionallySizedBox(
+            heightFactor: 0.82,
+            child: Container(
+              decoration: BoxDecoration(
+                color: theme.scaffoldBackgroundColor,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(22),
+                ),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: theme.dividerColor,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(
+                      'تفسير ${quran.getSurahNameArabic(verse.surahNumber)} - آية ${verse.verseNumber}',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: FutureBuilder<TafsirResult>(
+                      future: TafsirService.getTafsir(
+                        surahNumber: verse.surahNumber,
+                        verseNumber: verse.verseNumber,
+                      ),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+
+                        if (snapshot.hasError || !snapshot.hasData) {
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                              ),
+                              child: Text(
+                                'تعذر تحميل التفسير الآن. تأكد من الاتصال بالإنترنت ثم أعد المحاولة.',
+                                style: theme.textTheme.bodyMedium,
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          );
+                        }
+
+                        final tafsir = snapshot.data!;
+                        return ScrollConfiguration(
+                          behavior: const _NoGlowScrollBehavior(),
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 18),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.secondary
+                                        .withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Text(
+                                    verse.text,
+                                    textAlign: TextAlign.justify,
+                                    textDirection: TextDirection.rtl,
+                                    style: GoogleFonts.amiriQuran(
+                                      fontSize: (_fontSize - 2).clamp(
+                                        18.0,
+                                        32.0,
+                                      ),
+                                      height: 2.0,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                Text(
+                                  tafsir.text,
+                                  textAlign: TextAlign.justify,
+                                  textDirection: TextDirection.rtl,
+                                  style: theme.textTheme.bodyLarge?.copyWith(
+                                    fontSize: 19,
+                                    height: 1.9,
+                                  ),
+                                ),
+                                const SizedBox(height: 14),
+                                Text(
+                                  'المصدر: ${tafsir.source}${tafsir.fromCache ? ' (محفوظ محليًا)' : ''}',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.secondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -1743,7 +1903,12 @@ $verseText
     bool isCompact = false,
   }) {
     return Container(
-      padding: EdgeInsets.fromLTRB(14, isCompact ? 4 : 8, 14, isCompact ? 8 : 14),
+      padding: EdgeInsets.fromLTRB(
+        14,
+        isCompact ? 4 : 8,
+        14,
+        isCompact ? 8 : 14,
+      ),
       decoration: BoxDecoration(
         color: theme.cardColor,
         borderRadius: BorderRadius.vertical(

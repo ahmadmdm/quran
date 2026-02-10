@@ -535,10 +535,18 @@ class SettingsPage extends ConsumerWidget {
                       await modalRef
                           .read(notificationServiceProvider)
                           .requestCriticalAlarmPermissions();
+                      await _applyNotificationSettings(modalRef);
+                      final pending = await modalRef
+                          .read(notificationServiceProvider)
+                          .getPendingNotifications();
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('تم إرسال طلب الأذونات المطلوبة'),
+                          SnackBar(
+                            content: Text(
+                              pending.isEmpty
+                                  ? 'تم طلب الأذونات، لكن لا توجد إشعارات مجدولة حالياً.'
+                                  : 'تم تحديث الجدولة بنجاح (${pending.length})',
+                            ),
                           ),
                         );
                       }
@@ -779,7 +787,14 @@ class SettingsPage extends ConsumerWidget {
 
   Future<void> _applyNotificationSettings(WidgetRef ref) async {
     final settings = ref.read(settingsProvider);
-    final prayerTimes = ref.read(prayerTimesProvider).value;
+    var prayerTimes = ref.read(prayerTimesProvider).value;
+    if (prayerTimes == null) {
+      try {
+        prayerTimes = await ref.read(prayerTimesProvider.future);
+      } catch (_) {
+        return;
+      }
+    }
     if (prayerTimes == null) return;
 
     final enabledPrayers = _enabledPrayersFromSettings(settings);
