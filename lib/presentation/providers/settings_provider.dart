@@ -4,6 +4,8 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:adhan/adhan.dart';
 import '../../core/utils/notification_sound_support.dart';
 
+enum FoldPaneMode { auto, left, right, span }
+
 class SettingsState {
   final CalculationMethod calculationMethod;
   final Madhab madhab;
@@ -26,6 +28,7 @@ class SettingsState {
   final double? manualLatitude;
   final double? manualLongitude;
   final String? manualLocationLabel;
+  final FoldPaneMode foldPaneMode;
 
   SettingsState({
     required this.calculationMethod,
@@ -49,6 +52,7 @@ class SettingsState {
     required this.manualLatitude,
     required this.manualLongitude,
     required this.manualLocationLabel,
+    required this.foldPaneMode,
   });
 
   SettingsState copyWith({
@@ -73,6 +77,7 @@ class SettingsState {
     double? manualLatitude,
     double? manualLongitude,
     String? manualLocationLabel,
+    FoldPaneMode? foldPaneMode,
     bool clearManualLocationLabel = false,
   }) {
     return SettingsState(
@@ -108,6 +113,7 @@ class SettingsState {
       manualLocationLabel: clearManualLocationLabel
           ? null
           : (manualLocationLabel ?? this.manualLocationLabel),
+      foldPaneMode: foldPaneMode ?? this.foldPaneMode,
     );
   }
 }
@@ -137,6 +143,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
           manualLatitude: null,
           manualLongitude: null,
           manualLocationLabel: null,
+          foldPaneMode: FoldPaneMode.auto,
         ),
       ) {
     _loadSettings();
@@ -200,6 +207,10 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final manualLatitude = (box.get('manualLatitude') as num?)?.toDouble();
     final manualLongitude = (box.get('manualLongitude') as num?)?.toDouble();
     final manualLocationLabel = box.get('manualLocationLabel') as String?;
+    final foldPaneModeName = box.get(
+      'foldPaneMode',
+      defaultValue: FoldPaneMode.auto.name,
+    );
 
     CalculationMethod calcMethod = CalculationMethod.values.firstWhere(
       (e) => e.name == calcMethodName,
@@ -213,6 +224,10 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
 
     final themeMode = SettingsNotifier.themeModeFromStorageIndex(
       themeModeIndex,
+    );
+    final foldPaneMode = FoldPaneMode.values.firstWhere(
+      (e) => e.name == foldPaneModeName,
+      orElse: () => FoldPaneMode.auto,
     );
 
     state = SettingsState(
@@ -237,6 +252,7 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       manualLatitude: manualLatitude,
       manualLongitude: manualLongitude,
       manualLocationLabel: manualLocationLabel,
+      foldPaneMode: foldPaneMode,
     );
   }
 
@@ -368,6 +384,12 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     state = state.copyWith(useManualLocation: false);
     final box = Hive.box(_boxName);
     await box.put('useManualLocation', false);
+  }
+
+  Future<void> setFoldPaneMode(FoldPaneMode mode) async {
+    state = state.copyWith(foldPaneMode: mode);
+    final box = Hive.box(_boxName);
+    await box.put('foldPaneMode', mode.name);
   }
 
   static ThemeMode themeModeFromStorageIndex(Object? index) {

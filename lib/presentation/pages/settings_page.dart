@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:adhan/adhan.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../../core/localization/app_localizations.dart';
 import '../../core/utils/location_service.dart';
 import '../../core/utils/notification_sound_support.dart';
@@ -8,6 +9,7 @@ import '../providers/locale_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/prayer_provider.dart';
 import '../providers/notification_provider.dart';
+import 'innovation_lab_page.dart';
 
 import 'widget_customization_page.dart';
 
@@ -55,6 +57,20 @@ class SettingsPage extends ConsumerWidget {
                 context,
                 MaterialPageRoute(
                   builder: (context) => const WidgetCustomizationPage(),
+                ),
+              );
+            },
+          ),
+          _buildSettingsTile(
+            context,
+            icon: Icons.auto_awesome,
+            title: 'Innovation Lab',
+            subtitle: 'Feature flags, profiles, backup, analytics',
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const InnovationLabPage(),
                 ),
               );
             },
@@ -183,6 +199,13 @@ class SettingsPage extends ConsumerWidget {
                 .read(settingsProvider.notifier)
                 .setAlwaysShowHomeCards(!settings.alwaysShowHomeCards),
           ),
+          _buildSettingsTile(
+            context,
+            icon: Icons.splitscreen,
+            title: 'وضع شاشة الفولد',
+            subtitle: _getFoldPaneModeName(settings.foldPaneMode),
+            onTap: () => _handleFoldPaneModeTap(context, ref, settings),
+          ),
         ],
       ),
     );
@@ -261,6 +284,46 @@ class SettingsPage extends ConsumerWidget {
       case ThemeMode.system:
         return localizations.translate('system_default');
     }
+  }
+
+  String _getFoldPaneModeName(FoldPaneMode mode) {
+    switch (mode) {
+      case FoldPaneMode.auto:
+        return 'تلقائي';
+      case FoldPaneMode.left:
+        return 'اللوح الأيسر';
+      case FoldPaneMode.right:
+        return 'اللوح الأيمن';
+      case FoldPaneMode.span:
+        return 'تمديد على الشاشة كاملة';
+    }
+  }
+
+  void _handleFoldPaneModeTap(
+    BuildContext context,
+    WidgetRef ref,
+    SettingsState settings,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('وضع شاشة الفولد'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: FoldPaneMode.values.map((mode) {
+            return _buildChoiceTile(
+              context,
+              title: Text(_getFoldPaneModeName(mode)),
+              selected: settings.foldPaneMode == mode,
+              onTap: () {
+                ref.read(settingsProvider.notifier).setFoldPaneMode(mode);
+                Navigator.pop(context);
+              },
+            );
+          }).toList(),
+        ),
+      ),
+    );
   }
 
   void _handleLocationTap(
@@ -358,129 +421,141 @@ class SettingsPage extends ConsumerWidget {
       context: context,
       isScrollControlled: true,
       builder: (bottomSheetContext) {
-        final currentSettings = ref.watch(settingsProvider);
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 16,
-            bottom: MediaQuery.of(bottomSheetContext).viewInsets.bottom + 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SwitchListTile(
-                title: Text(localizations.translate('notifications')),
-                value: currentSettings.areNotificationsEnabled,
-                onChanged: (_) async {
-                  await _handleNotificationToggle(context, ref);
-                },
+        return Consumer(
+          builder: (context, modalRef, _) {
+            final currentSettings = modalRef.watch(settingsProvider);
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(bottomSheetContext).viewInsets.bottom + 16,
               ),
-              SwitchListTile(
-                title: Text(
-                  localizations.translate('notification_prayer_time'),
-                ),
-                subtitle: const Text('تنبيه عند دخول وقت الصلاة'),
-                value: currentSettings.prayerTimeNotificationsEnabled,
-                onChanged: (value) async {
-                  await ref
-                      .read(settingsProvider.notifier)
-                      .setPrayerTimeNotificationsEnabled(value);
-                  await _applyNotificationSettings(ref);
-                },
-              ),
-              SwitchListTile(
-                title: Text(localizations.translate('notification_pre_prayer')),
-                subtitle: const Text('تنبيه قبل الأذان حسب المدة المحددة'),
-                value: currentSettings.prePrayerRemindersEnabled,
-                onChanged: (value) async {
-                  await ref
-                      .read(settingsProvider.notifier)
-                      .setPrePrayerRemindersEnabled(value);
-                  await _applyNotificationSettings(ref);
-                },
-              ),
-              const SizedBox(height: 8),
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: SizedBox.shrink(),
-              ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Text(
-                    localizations.translate('notification_per_prayer'),
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SwitchListTile(
+                    title: Text(localizations.translate('notifications')),
+                    value: currentSettings.areNotificationsEnabled,
+                    onChanged: (_) async {
+                      await _handleNotificationToggle(context, modalRef);
+                    },
                   ),
-                ),
-              ),
-              SwitchListTile(
-                dense: true,
-                title: const Text('الفجر'),
-                value: currentSettings.fajrNotificationsEnabled,
-                onChanged: (value) =>
-                    _togglePrayerNotification(ref, Prayer.fajr, value),
-              ),
-              SwitchListTile(
-                dense: true,
-                title: const Text('الظهر'),
-                value: currentSettings.dhuhrNotificationsEnabled,
-                onChanged: (value) =>
-                    _togglePrayerNotification(ref, Prayer.dhuhr, value),
-              ),
-              SwitchListTile(
-                dense: true,
-                title: const Text('العصر'),
-                value: currentSettings.asrNotificationsEnabled,
-                onChanged: (value) =>
-                    _togglePrayerNotification(ref, Prayer.asr, value),
-              ),
-              SwitchListTile(
-                dense: true,
-                title: const Text('المغرب'),
-                value: currentSettings.maghribNotificationsEnabled,
-                onChanged: (value) =>
-                    _togglePrayerNotification(ref, Prayer.maghrib, value),
-              ),
-              SwitchListTile(
-                dense: true,
-                title: const Text('العشاء'),
-                value: currentSettings.ishaNotificationsEnabled,
-                onChanged: (value) =>
-                    _togglePrayerNotification(ref, Prayer.isha, value),
-              ),
-              ListTile(
-                leading: const Icon(Icons.tune),
-                title: const Text('إعدادات النظام للإشعارات'),
-                subtitle: const Text(
-                  'فتح إعدادات التطبيق للتحقق من السماح بالإشعارات',
-                ),
-                onTap: () async {
-                  await ref
-                      .read(notificationServiceProvider)
-                      .openAppNotificationSettings();
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.alarm_on),
-                title: const Text('تفعيل جدولة دقيقة'),
-                subtitle: const Text('طلب أذونات التنبيه والبطارية'),
-                onTap: () async {
-                  await ref
-                      .read(notificationServiceProvider)
-                      .requestCriticalAlarmPermissions();
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('تم إرسال طلب الأذونات المطلوبة'),
+                  SwitchListTile(
+                    title: Text(
+                      localizations.translate('notification_prayer_time'),
+                    ),
+                    subtitle: const Text('تنبيه عند دخول وقت الصلاة'),
+                    value: currentSettings.prayerTimeNotificationsEnabled,
+                    onChanged: (value) async {
+                      await modalRef
+                          .read(settingsProvider.notifier)
+                          .setPrayerTimeNotificationsEnabled(value);
+                      await _applyNotificationSettings(modalRef);
+                    },
+                  ),
+                  SwitchListTile(
+                    title: Text(localizations.translate('notification_pre_prayer')),
+                    subtitle: const Text('تنبيه قبل الأذان حسب المدة المحددة'),
+                    value: currentSettings.prePrayerRemindersEnabled,
+                    onChanged: (value) async {
+                      await modalRef
+                          .read(settingsProvider.notifier)
+                          .setPrePrayerRemindersEnabled(value);
+                      await _applyNotificationSettings(modalRef);
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: SizedBox.shrink(),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        localizations.translate('notification_per_prayer'),
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
-                    );
-                  }
-                },
+                    ),
+                  ),
+                  SwitchListTile(
+                    dense: true,
+                    title: const Text('الفجر'),
+                    value: currentSettings.fajrNotificationsEnabled,
+                    onChanged: (value) async =>
+                        _togglePrayerNotification(modalRef, Prayer.fajr, value),
+                  ),
+                  SwitchListTile(
+                    dense: true,
+                    title: const Text('الظهر'),
+                    value: currentSettings.dhuhrNotificationsEnabled,
+                    onChanged: (value) async =>
+                        _togglePrayerNotification(modalRef, Prayer.dhuhr, value),
+                  ),
+                  SwitchListTile(
+                    dense: true,
+                    title: const Text('العصر'),
+                    value: currentSettings.asrNotificationsEnabled,
+                    onChanged: (value) async =>
+                        _togglePrayerNotification(modalRef, Prayer.asr, value),
+                  ),
+                  SwitchListTile(
+                    dense: true,
+                    title: const Text('المغرب'),
+                    value: currentSettings.maghribNotificationsEnabled,
+                    onChanged: (value) async =>
+                        _togglePrayerNotification(modalRef, Prayer.maghrib, value),
+                  ),
+                  SwitchListTile(
+                    dense: true,
+                    title: const Text('العشاء'),
+                    value: currentSettings.ishaNotificationsEnabled,
+                    onChanged: (value) async =>
+                        _togglePrayerNotification(modalRef, Prayer.isha, value),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.tune),
+                    title: const Text('إعدادات النظام للإشعارات'),
+                    subtitle: const Text(
+                      'فتح إعدادات التطبيق للتحقق من السماح بالإشعارات',
+                    ),
+                    onTap: () async {
+                      await modalRef
+                          .read(notificationServiceProvider)
+                          .openAppNotificationSettings();
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.alarm_on),
+                    title: const Text('تفعيل جدولة دقيقة'),
+                    subtitle: const Text('طلب أذونات التنبيه والبطارية'),
+                    onTap: () async {
+                      await modalRef
+                          .read(notificationServiceProvider)
+                          .requestCriticalAlarmPermissions();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('تم إرسال طلب الأذونات المطلوبة'),
+                          ),
+                        );
+                      }
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.bug_report),
+                    title: const Text('تشخيص الإشعارات'),
+                    subtitle: const Text(
+                      'عرض الأذونات وعدد الإشعارات المجدولة حاليًا',
+                    ),
+                    onTap: () => _showNotificationDiagnostics(context, modalRef),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -767,6 +842,179 @@ class SettingsPage extends ConsumerWidget {
     await _applyNotificationSettings(ref);
   }
 
+  Future<void> _showNotificationDiagnostics(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    Future<_NotificationDiagnosticsData> loadDiagnostics() async {
+      final service = ref.read(notificationServiceProvider);
+      await service.init();
+      final errors = <String>[];
+
+      Map<String, bool> permissionStatus = const {
+        'notifications': false,
+        'exactAlarms': false,
+        'batteryOptimization': false,
+      };
+      List<PendingNotificationRequest> pending = const [];
+
+      try {
+        permissionStatus = await service.getPermissionStatus();
+      } catch (e) {
+        errors.add('تعذر قراءة حالة الأذونات');
+      }
+      try {
+        pending = await service.getPendingNotifications();
+      } catch (e) {
+        errors.add('تعذر قراءة الإشعارات المجدولة');
+      }
+
+      final settings = ref.read(settingsProvider);
+      return _NotificationDiagnosticsData(
+        permissionStatus: permissionStatus,
+        pendingCount: pending.length,
+        pendingSample: pending.take(8).toList(),
+        settings: settings,
+        warningMessage: errors.isEmpty ? null : errors.join(' - '),
+      );
+    }
+
+    if (!context.mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('تشخيص الإشعارات'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: FutureBuilder<_NotificationDiagnosticsData>(
+                  future: loadDiagnostics(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+
+                    if (snapshot.hasError || !snapshot.hasData) {
+                      return Text(
+                        'تعذر تحميل بيانات التشخيص\n${snapshot.error ?? ''}',
+                      );
+                    }
+
+                    final data = snapshot.data!;
+                    final status = data.permissionStatus;
+                    final notificationsAllowed = status['notifications'] == true;
+                    final exactAlarmsAllowed = status['exactAlarms'] == true;
+                    final batteryOptimizationAllowed =
+                        status['batteryOptimization'] == true;
+
+                    String yesNo(bool value) => value ? 'مسموح' : 'غير مسموح';
+
+                    return SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'حالة التطبيق',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.secondary,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'الإشعارات داخل التطبيق: ${data.settings.areNotificationsEnabled ? 'مفعلة' : 'معطلة'}',
+                          ),
+                          Text(
+                            'إشعارات وقت الصلاة: ${data.settings.prayerTimeNotificationsEnabled ? 'مفعلة' : 'معطلة'}',
+                          ),
+                          Text(
+                            'تذكيرات قبل الأذان: ${data.settings.prePrayerRemindersEnabled ? 'مفعلة' : 'معطلة'}',
+                          ),
+                          Text(
+                            'الصوت: ${_getSoundName(data.settings.notificationSound)}',
+                          ),
+                          Text(
+                            'الاهتزاز: ${data.settings.vibrationEnabled ? 'مفعل' : 'معطل'}',
+                          ),
+                          if (data.warningMessage != null) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              data.warningMessage!,
+                              style: TextStyle(
+                                color: Colors.orange.shade700,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 14),
+                          Text(
+                            'أذونات النظام',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.secondary,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text('إذن الإشعارات: ${yesNo(notificationsAllowed)}'),
+                          Text(
+                            'Exact Alarms: ${yesNo(exactAlarmsAllowed)}',
+                          ),
+                          Text(
+                            'استثناء البطارية: ${yesNo(batteryOptimizationAllowed)}',
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            'الجدولة الحالية',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.secondary,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text('عدد الإشعارات المجدولة: ${data.pendingCount}'),
+                          const SizedBox(height: 8),
+                          if (data.pendingSample.isEmpty)
+                            const Text('لا توجد إشعارات مجدولة حاليًا')
+                          else
+                            ...data.pendingSample.map(
+                              (item) => Text(
+                                '- #${item.id}: ${item.title ?? '(بدون عنوان)'}',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('إغلاق'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    setState(() {});
+                  },
+                  child: const Text('تحديث'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _showManualLocationDialog(BuildContext context, WidgetRef ref) {
     final settings = ref.read(settingsProvider);
     final latController = TextEditingController(
@@ -927,4 +1175,20 @@ class SettingsPage extends ConsumerWidget {
       onTap: onTap,
     );
   }
+}
+
+class _NotificationDiagnosticsData {
+  final Map<String, bool> permissionStatus;
+  final int pendingCount;
+  final List<PendingNotificationRequest> pendingSample;
+  final SettingsState settings;
+  final String? warningMessage;
+
+  _NotificationDiagnosticsData({
+    required this.permissionStatus,
+    required this.pendingCount,
+    required this.pendingSample,
+    required this.settings,
+    this.warningMessage,
+  });
 }

@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'core/theme/app_theme.dart';
+import 'core/services/app_analytics_service.dart';
 import 'presentation/pages/home_page.dart';
 import 'core/localization/app_localizations.dart';
 import 'presentation/providers/locale_provider.dart';
@@ -13,6 +14,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Hive.initFlutter();
   await Hive.openBox('settings');
+  await AppAnalyticsService().logEvent('app_open');
 
   // Start the app immediately without waiting for location
   runApp(const ProviderScope(child: PrayerApp()));
@@ -50,6 +52,9 @@ class PrayerApp extends ConsumerWidget {
     final locale = ref.watch(localeNotifierProvider);
     final themeMode = ref.watch(settingsProvider.select((s) => s.themeMode));
     final largeText = ref.watch(settingsProvider.select((s) => s.largeText));
+    final foldPaneMode = ref.watch(
+      settingsProvider.select((s) => s.foldPaneMode),
+    );
 
     return MaterialApp(
       title: 'Luxury Prayer App',
@@ -73,7 +78,7 @@ class PrayerApp extends ConsumerWidget {
                 ? TextDirection.rtl
                 : TextDirection.ltr);
 
-        Object? verticalHinge;
+        dynamic verticalHinge;
         for (final feature in media.displayFeatures) {
           final featureType = feature.type.toString().toLowerCase();
           final isVerticalHinge =
@@ -87,9 +92,14 @@ class PrayerApp extends ConsumerWidget {
         }
 
         Widget resolvedChild = child ?? const SizedBox.shrink();
-        if (verticalHinge != null) {
-          final hinge = (verticalHinge as dynamic).bounds as Rect;
-          final useRightPane = textDirection == TextDirection.rtl;
+        if (verticalHinge != null && foldPaneMode != FoldPaneMode.span) {
+          final hinge = verticalHinge.bounds;
+          final useRightPane = switch (foldPaneMode) {
+            FoldPaneMode.left => false,
+            FoldPaneMode.right => true,
+            FoldPaneMode.auto || FoldPaneMode.span =>
+              textDirection == TextDirection.rtl,
+          };
           final leftPaneWidth = hinge.left;
           final rightPaneWidth = media.size.width - hinge.right;
           final paneWidth = useRightPane ? rightPaneWidth : leftPaneWidth;

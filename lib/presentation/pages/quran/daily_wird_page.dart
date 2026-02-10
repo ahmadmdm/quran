@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:quran/quran.dart' as quran;
+import 'dart:math' as math;
 import 'quran_reader_page.dart';
 
 class DailyWirdPage extends ConsumerStatefulWidget {
@@ -19,6 +20,8 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
 
   // Wird settings
   int _dailyPages = 5; // Default 5 pages per day
+  bool _adaptivePlanEnabled = true;
+  int _dailyWirdGoalDays = 30;
 
   @override
   void initState() {
@@ -29,6 +32,20 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
 
   void _loadSettings() {
     _dailyPages = _settingsBox.get('daily_wird_pages', defaultValue: 5);
+    _adaptivePlanEnabled =
+        (_settingsBox.get('daily_wird_adaptive_enabled', defaultValue: true)
+            as bool?) ??
+        true;
+    _dailyWirdGoalDays =
+        (_settingsBox.get('daily_wird_goal_days', defaultValue: 30) as int?) ??
+        30;
+    _settingsBox.put(
+      'daily_wird_plan_start_date',
+      _settingsBox.get(
+        'daily_wird_plan_start_date',
+        defaultValue: DateTime.now().toIso8601String(),
+      ),
+    );
   }
 
   @override
@@ -236,10 +253,128 @@ class _DailyWirdPageState extends ConsumerState<DailyWirdPage>
 
               // Settings Card
               _buildWirdSettingsCard(context),
+              const SizedBox(height: 12),
+              _buildAdaptivePlanCard(context, currentPage),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildAdaptivePlanCard(BuildContext context, int currentPage) {
+    final theme = Theme.of(context);
+    final startDateRaw = _settingsBox.get(
+      'daily_wird_plan_start_date',
+      defaultValue: DateTime.now().toIso8601String(),
+    ) as String;
+    final startDate = DateTime.tryParse(startDateRaw) ?? DateTime.now();
+    final elapsedDays = DateTime.now().difference(startDate).inDays;
+    final remainingDays = math.max(1, _dailyWirdGoalDays - elapsedDays);
+    final remainingPages = math.max(0, 605 - currentPage);
+    final suggestedPages = math.max(1, (remainingPages / remainingDays).ceil());
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: theme.colorScheme.secondary.withValues(alpha: 0.25),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.auto_awesome, color: theme.colorScheme.secondary),
+              const SizedBox(width: 8),
+              Text(
+                'الخطة التكيفية',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const Spacer(),
+              Switch(
+                value: _adaptivePlanEnabled,
+                onChanged: (v) {
+                  setState(() => _adaptivePlanEnabled = v);
+                  _settingsBox.put('daily_wird_adaptive_enabled', v);
+                },
+              ),
+            ],
+          ),
+          Text(
+            'الهدف: $_dailyWirdGoalDays يوم  |  المتبقي: $remainingDays يوم',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.textTheme.bodySmall?.color?.withValues(alpha: 0.8),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'الاقتراح اليومي: $suggestedPages صفحات',
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: theme.colorScheme.secondary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _dailyWirdGoalDays = math.max(7, _dailyWirdGoalDays - 1);
+                    });
+                    _settingsBox.put('daily_wird_goal_days', _dailyWirdGoalDays);
+                  },
+                  icon: const Icon(Icons.remove),
+                  label: const Text('تقليل الهدف'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _dailyWirdGoalDays = math.min(365, _dailyWirdGoalDays + 1);
+                    });
+                    _settingsBox.put('daily_wird_goal_days', _dailyWirdGoalDays);
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('زيادة الهدف'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: !_adaptivePlanEnabled
+                  ? null
+                  : () {
+                      setState(() {
+                        _dailyPages = suggestedPages.clamp(1, 30);
+                      });
+                      _settingsBox.put('daily_wird_pages', _dailyPages);
+                    },
+              icon: const Icon(Icons.tune),
+              label: const Text('تطبيق الاقتراح اليومي'),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -20,6 +20,8 @@ class _QuranIndexPageState extends State<QuranIndexPage>
   String _searchQuery = '';
   final ScrollController _scrollController = ScrollController();
   final Map<int, (int surah, int verse)> _pageStartCache = {};
+  final Map<String, List<(int surah, int verse, String text)>> _verseSearchCache =
+      {};
 
   @override
   void initState() {
@@ -445,6 +447,9 @@ class _QuranIndexPageState extends State<QuranIndexPage>
     AppLocalizations localizations,
   ) {
     final isAr = localizations.locale.languageCode == 'ar';
+    final queryRaw = _searchQuery.trim();
+    final query = queryRaw.toLowerCase();
+    final queryNormalized = _normalizeArabicForSearch(queryRaw);
 
     // Filter surahs
     final filteredSurahs = List.generate(114, (index) => index + 1).where((
@@ -452,34 +457,183 @@ class _QuranIndexPageState extends State<QuranIndexPage>
     ) {
       final nameEn = quran.getSurahName(surahNumber).toLowerCase();
       final nameAr = quran.getSurahNameArabic(surahNumber);
-      final query = _searchQuery.toLowerCase();
-      return nameEn.contains(query) ||
-          nameAr.contains(query) ||
-          surahNumber.toString().contains(query);
+      final nameArNormalized = _normalizeArabicForSearch(nameAr);
+      final surahAsText = surahNumber.toString();
+      final exactHit =
+          query.isEmpty ||
+          nameEn.contains(query) ||
+          nameAr.contains(queryRaw) ||
+          nameArNormalized.contains(queryNormalized) ||
+          surahAsText.contains(query);
+      if (exactHit) return true;
+
+      // Smart fuzzy fallback for short typos in surah names
+      if (query.length >= 3) {
+        final distEn = _levenshteinDistance(nameEn, query);
+        final distAr = _levenshteinDistance(nameArNormalized, queryNormalized);
+        return distEn <= 2 || distAr <= 2;
+      }
+      return false;
     }).toList();
 
-    return ListView.builder(
-      itemCount: filteredSurahs.length,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemBuilder: (context, index) {
-        final surahNumber = filteredSurahs[index];
-        final place = quran.getPlaceOfRevelation(surahNumber);
-        final isMeccan = place == 'Makkah';
-        final verseCount = quran.getVerseCount(surahNumber);
+    final verseMatches = queryNormalized.isEmpty
+        ? const <(int, int, String)>[]
+        : _findVerseMatches(queryNormalized);
 
-        return _buildSurahCard(
-          context,
-          theme,
-          surahNumber: surahNumber,
-          nameAr: quran.getSurahNameArabic(surahNumber),
-          nameEn: quran.getSurahName(surahNumber),
-          isMeccan: isMeccan,
-          verseCount: verseCount,
-          isAr: isAr,
-          localizations: localizations,
-        );
-      },
+    if (queryRaw.isNotEmpty && filteredSurahs.isEmpty && verseMatches.isEmpty) {
+      return Center(
+        child: Text(
+          'لا توجد نتائج مطابقة',
+          style: theme.textTheme.bodyLarge?.copyWith(
+            color: theme.textTheme.bodyLarge?.color?.withValues(alpha: 0.7),
+          ),
+        ),
+      );
+    }
+
+    return ListView(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      children: [
+        if (verseMatches.isNotEmpty) ...[
+          Text(
+            'نتائج الآيات',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...verseMatches.take(25).map(
+            (v) => _buildVerseResultCard(
+              context,
+              theme,
+              surahNumber: v.$1,
+              verseNumber: v.$2,
+              verseText: v.$3,
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        ...filteredSurahs.map((surahNumber) {
+          final place = quran.getPlaceOfRevelation(surahNumber);
+          final isMeccan = place == 'Makkah';
+          final verseCount = quran.getVerseCount(surahNumber);
+          return _buildSurahCard(
+            context,
+            theme,
+            surahNumber: surahNumber,
+            nameAr: quran.getSurahNameArabic(surahNumber),
+            nameEn: quran.getSurahName(surahNumber),
+            isMeccan: isMeccan,
+            verseCount: verseCount,
+            isAr: isAr,
+            localizations: localizations,
+          );
+        }),
+      ],
     );
+  }
+
+  Widget _buildVerseResultCard(
+    BuildContext context,
+    ThemeData theme, {
+    required int surahNumber,
+    required int verseNumber,
+    required String verseText,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: theme.dividerColor.withValues(alpha: 0.35)),
+      ),
+      child: ListTile(
+        title: Text(
+          verseText,
+          textDirection: TextDirection.rtl,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.amiri(fontSize: 20, fontWeight: FontWeight.w700),
+        ),
+        subtitle: Text(
+          '${quran.getSurahNameArabic(surahNumber)} - آية $verseNumber',
+        ),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => QuranReaderPage(
+                initialSurahNumber: surahNumber,
+                initialVerseNumber: verseNumber,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  List<(int surah, int verse, String text)> _findVerseMatches(String query) {
+    final cached = _verseSearchCache[query];
+    if (cached != null) return cached;
+
+    final matches = <(int, int, String)>[];
+    for (int s = 1; s <= 114; s++) {
+      final verseCount = quran.getVerseCount(s);
+      for (int v = 1; v <= verseCount; v++) {
+        final text = quran.getVerse(s, v);
+        final normalized = _normalizeArabicForSearch(text);
+        if (normalized.contains(query)) {
+          matches.add((s, v, text));
+        }
+      }
+    }
+    _verseSearchCache[query] = matches;
+    return matches;
+  }
+
+  String _normalizeArabicForSearch(String input) {
+    return input
+        .replaceAll(RegExp(r'[\u064B-\u065F\u0670\u0640]'), '')
+        .replaceAll('ٱ', 'ا')
+        .replaceAll('أ', 'ا')
+        .replaceAll('إ', 'ا')
+        .replaceAll('آ', 'ا')
+        .replaceAll('ى', 'ي')
+        .replaceAll(RegExp(r'[^\u0621-\u064A0-9\s]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim()
+        .toLowerCase();
+  }
+
+  int _levenshteinDistance(String a, String b) {
+    if (a == b) return 0;
+    if (a.isEmpty) return b.length;
+    if (b.isEmpty) return a.length;
+
+    final matrix = List.generate(
+      a.length + 1,
+      (_) => List<int>.filled(b.length + 1, 0),
+    );
+    for (int i = 0; i <= a.length; i++) {
+      matrix[i][0] = i;
+    }
+    for (int j = 0; j <= b.length; j++) {
+      matrix[0][j] = j;
+    }
+
+    for (int i = 1; i <= a.length; i++) {
+      for (int j = 1; j <= b.length; j++) {
+        final cost = a[i - 1] == b[j - 1] ? 0 : 1;
+        matrix[i][j] = [
+          matrix[i - 1][j] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j - 1] + cost,
+        ].reduce((x, y) => x < y ? x : y);
+      }
+    }
+
+    return matrix[a.length][b.length];
   }
 
   Widget _buildSurahCard(
@@ -824,7 +978,7 @@ class _QuranIndexPageState extends State<QuranIndexPage>
     return ValueListenableBuilder(
       valueListenable: Hive.box(
         'settings',
-      ).listenable(keys: ['verse_bookmarks', 'page_bookmarks']),
+      ).listenable(keys: ['verse_bookmarks', 'page_bookmarks', 'verse_bookmark_details']),
       builder: (context, Box box, child) {
         final verseBookmarks =
             (box.get('verse_bookmarks', defaultValue: <String>[]) as List)
@@ -833,6 +987,13 @@ class _QuranIndexPageState extends State<QuranIndexPage>
             (box.get('page_bookmarks', defaultValue: <int>[]) as List)
                 .cast<int>()
               ..sort();
+        final detailsRaw = box.get(
+          'verse_bookmark_details',
+          defaultValue: <String, dynamic>{},
+        );
+        final bookmarkDetails = Map<String, dynamic>.from(
+          detailsRaw is Map ? detailsRaw : <String, dynamic>{},
+        );
 
         if (verseBookmarks.isEmpty && pageBookmarks.isEmpty) {
           return Center(
@@ -919,13 +1080,23 @@ class _QuranIndexPageState extends State<QuranIndexPage>
                 final parts = bookmark.split(':');
                 final surahNumber = int.parse(parts[0]);
                 final verseNumber = int.parse(parts[1]);
+                final details = bookmarkDetails[bookmark];
+                final note = details is Map ? (details['note']?.toString() ?? '') : '';
+                final tags = details is Map && details['tags'] is List
+                    ? (details['tags'] as List).map((e) => e.toString()).toList()
+                    : <String>[];
+                final extra = [
+                  if (note.isNotEmpty) note,
+                  if (tags.isNotEmpty) 'وسوم: ${tags.join('، ')}',
+                ].join('  |  ');
                 return _buildBookmarkCard(
                   context: context,
                   theme: theme,
                   title: isAr
                       ? quran.getSurahNameArabic(surahNumber)
                       : quran.getSurahName(surahNumber),
-                  subtitle: '${localizations.translate('verse')} $verseNumber',
+                  subtitle:
+                      '${localizations.translate('verse')} $verseNumber${extra.isEmpty ? '' : '\n$extra'}',
                   badgeText: '$verseNumber',
                   onTap: () {
                     Navigator.push(
@@ -941,6 +1112,8 @@ class _QuranIndexPageState extends State<QuranIndexPage>
                   onDelete: () {
                     verseBookmarks.remove(bookmark);
                     box.put('verse_bookmarks', verseBookmarks);
+                    bookmarkDetails.remove(bookmark);
+                    box.put('verse_bookmark_details', bookmarkDetails);
                   },
                 );
               }),

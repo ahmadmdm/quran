@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:quran/quran.dart' as quran;
@@ -30,6 +31,11 @@ enum ReaderMode { reading, hifz }
 
 class _QuranReaderPageState extends State<QuranReaderPage>
     with TickerProviderStateMixin {
+  static const String _readerFontSizeKey = 'quran_reader_font_size';
+  static const String _readerShowTranslationKey = 'quran_reader_show_translation';
+  static const String _readerTopOptionsExpandedKey =
+      'quran_reader_top_options_expanded';
+
   late int _currentSurahNumber;
   late final PageController _pageController;
   final Map<int, List<_PageVerse>> _pageVersesCache = {};
@@ -44,6 +50,7 @@ class _QuranReaderPageState extends State<QuranReaderPage>
   ReaderMode _readerMode = ReaderMode.reading;
   int _selectedHifzVerseIndex = 0;
   bool _hideHifzVerseText = false;
+  bool _isTopOptionsExpanded = true;
 
   Timer? _focusTimer;
   int _focusTotalSeconds = 0;
@@ -52,6 +59,7 @@ class _QuranReaderPageState extends State<QuranReaderPage>
   @override
   void initState() {
     super.initState();
+    _loadReaderPreferences();
     _currentSurahNumber = widget.initialSurahNumber;
     _currentVisibleVerse = widget.initialVerseNumber ?? 1;
     _currentVisiblePage = quran.getPageNumber(
@@ -67,6 +75,46 @@ class _QuranReaderPageState extends State<QuranReaderPage>
 
     _saveLastRead();
     _checkFavorite();
+  }
+
+  void _loadReaderPreferences() {
+    final box = Hive.box('settings');
+    final storedFontSize = (box.get(_readerFontSizeKey) as num?)?.toDouble();
+    if (storedFontSize != null) {
+      _fontSize = storedFontSize.clamp(18.0, 40.0);
+    }
+    _showTranslation =
+        (box.get(_readerShowTranslationKey, defaultValue: false) as bool?) ??
+        false;
+    _isTopOptionsExpanded =
+        (box.get(_readerTopOptionsExpandedKey, defaultValue: true) as bool?) ??
+        true;
+  }
+
+  Future<void> _saveReaderPreferences() async {
+    final box = Hive.box('settings');
+    await box.put(_readerFontSizeKey, _fontSize);
+    await box.put(_readerShowTranslationKey, _showTranslation);
+    await box.put(_readerTopOptionsExpandedKey, _isTopOptionsExpanded);
+  }
+
+  Future<void> _setFontSize(double newSize) async {
+    final clamped = newSize.clamp(18.0, 40.0);
+    if ((clamped - _fontSize).abs() < 0.01) return;
+    if (!mounted) return;
+    setState(() {
+      _fontSize = clamped;
+    });
+    await _saveReaderPreferences();
+  }
+
+  Future<void> _setTopOptionsExpanded(bool expanded) async {
+    if (_isTopOptionsExpanded == expanded) return;
+    if (!mounted) return;
+    setState(() {
+      _isTopOptionsExpanded = expanded;
+    });
+    await _saveReaderPreferences();
   }
 
   Future<void> _saveLastRead() async {
@@ -444,9 +492,14 @@ class _QuranReaderPageState extends State<QuranReaderPage>
         (box.get('verse_bookmarks', defaultValue: <String>[]) as List)
             .cast<String>();
     final key = '$surahNumber:$verseNumber';
+    final detailsRaw = box.get('verse_bookmark_details', defaultValue: <String, dynamic>{});
+    final details = Map<String, dynamic>.from(
+      detailsRaw is Map ? detailsRaw : <String, dynamic>{},
+    );
 
     if (bookmarks.contains(key)) {
       bookmarks.remove(key);
+      details.remove(key);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('تم إزالة الفاصل'),
@@ -458,7 +511,15 @@ class _QuranReaderPageState extends State<QuranReaderPage>
         ),
       );
     } else {
+      final extra = await _showBookmarkDetailsDialog();
+      if (extra == null) return;
+      if (!mounted) return;
       bookmarks.add(key);
+      details[key] = {
+        'note': extra.$1,
+        'tags': extra.$2,
+        'createdAt': DateTime.now().toIso8601String(),
+      };
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('تم حفظ الفاصل'),
@@ -472,7 +533,59 @@ class _QuranReaderPageState extends State<QuranReaderPage>
     }
 
     await box.put('verse_bookmarks', bookmarks);
+    await box.put('verse_bookmark_details', details);
     setState(() {});
+  }
+
+  Future<(String, List<String>)?> _showBookmarkDetailsDialog() async {
+    final noteController = TextEditingController();
+    final tagsController = TextEditingController();
+    return await showDialog<(String, List<String>)>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('تفاصيل الفاصل'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: noteController,
+              decoration: const InputDecoration(
+                labelText: 'ملاحظة (اختياري)',
+                hintText: 'مثال: آية للتدبر',
+              ),
+              maxLines: 2,
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: tagsController,
+              decoration: const InputDecoration(
+                labelText: 'وسوم (اختياري)',
+                hintText: 'مثال: حفظ،تدبر،مراجعة',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, ('', <String>[])),
+            child: const Text('تخطي'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final note = noteController.text.trim();
+              final tags = tagsController.text
+                  .split(',')
+                  .map((e) => e.trim())
+                  .where((e) => e.isNotEmpty)
+                  .toSet()
+                  .toList();
+              Navigator.pop(context, (note, tags));
+            },
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
   }
 
   // Share verse
@@ -537,6 +650,8 @@ $verseText
     final quranHeaderColor = isDark
         ? const Color(0xFF16213E)
         : const Color(0xFF1B4332); // Dark green header (traditional Quran)
+    final isReaderCollapsed = !_isTopOptionsExpanded;
+    final pageBottomInset = isReaderCollapsed ? 60.0 : 78.0;
 
     return Scaffold(
       backgroundColor: quranPaperColor,
@@ -551,143 +666,135 @@ $verseText
           // Main Content
           CustomScrollView(
             slivers: [
-              // App Bar
-              SliverAppBar(
-                expandedHeight: 140,
-                floating: false,
-                pinned: true,
-                backgroundColor: quranHeaderColor,
-                leading: IconButton(
-                  icon: const Icon(
-                    Icons.arrow_back_ios_rounded,
-                    color: Colors.white,
-                  ),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                actions: [
-                  IconButton(
-                    icon: Icon(
-                      _isFavorite
-                          ? Icons.favorite_rounded
-                          : Icons.favorite_border_rounded,
-                      color: _isFavorite ? Colors.red : Colors.white,
-                    ),
-                    onPressed: _toggleFavorite,
-                  ),
-                  IconButton(
+              if (!isReaderCollapsed)
+                SliverAppBar(
+                  expandedHeight: 140,
+                  floating: false,
+                  pinned: true,
+                  backgroundColor: quranHeaderColor,
+                  leading: IconButton(
                     icon: const Icon(
-                      Icons.text_increase_rounded,
+                      Icons.arrow_back_ios_rounded,
                       color: Colors.white,
                     ),
-                    onPressed: () {
-                      setState(() {
-                        if (_fontSize < 40) _fontSize += 2;
-                      });
-                    },
+                    onPressed: () => Navigator.pop(context),
                   ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.text_decrease_rounded,
-                      color: Colors.white,
+                  actions: [
+                    IconButton(
+                      icon: Icon(
+                        _isFavorite
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                        color: _isFavorite ? Colors.red : Colors.white,
+                      ),
+                      onPressed: _toggleFavorite,
                     ),
-                    onPressed: () {
-                      setState(() {
-                        if (_fontSize > 18) _fontSize -= 2;
-                      });
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(
-                      Icons.more_vert_rounded,
-                      color: Colors.white,
+                    IconButton(
+                      icon: const Icon(
+                        Icons.text_increase_rounded,
+                        color: Colors.white,
+                      ),
+                      onPressed: () => _setFontSize(_fontSize + 2),
                     ),
-                    onPressed: () => _showSettingsSheet(context),
-                  ),
-                ],
-                flexibleSpace: FlexibleSpaceBar(
-                  background: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      // Gradient Background
-                      Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: isDark
-                                ? [
-                                    const Color(0xFF1A1F38),
-                                    const Color(0xFF0F1629),
-                                  ]
-                                : [
-                                    const Color(0xFF2C3E50),
-                                    const Color(0xFF1A252F),
-                                  ],
+                    IconButton(
+                      icon: const Icon(
+                        Icons.text_decrease_rounded,
+                        color: Colors.white,
+                      ),
+                      onPressed: () => _setFontSize(_fontSize - 2),
+                    ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons.more_vert_rounded,
+                        color: Colors.white,
+                      ),
+                      onPressed: () => _showSettingsSheet(context),
+                    ),
+                  ],
+                  flexibleSpace: FlexibleSpaceBar(
+                    background: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Gradient Background
+                        Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: isDark
+                                  ? [
+                                      const Color(0xFF1A1F38),
+                                      const Color(0xFF0F1629),
+                                    ]
+                                  : [
+                                      const Color(0xFF2C3E50),
+                                      const Color(0xFF1A252F),
+                                    ],
+                            ),
                           ),
                         ),
-                      ),
-                      // Decorative Pattern
-                      Positioned(
-                        right: -30,
-                        top: -30,
-                        child: Opacity(
-                          opacity: 0.08,
-                          child: Icon(
-                            Icons.auto_stories_rounded,
-                            size: 180,
-                            color: Colors.white,
+                        // Decorative Pattern
+                        Positioned(
+                          right: -30,
+                          top: -30,
+                          child: Opacity(
+                            opacity: 0.08,
+                            child: Icon(
+                              Icons.auto_stories_rounded,
+                              size: 180,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
-                      ),
-                      // Surah Info
-                      Positioned(
-                        left: 20,
-                        right: 20,
-                        bottom: 20,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Text(
-                              quran.getSurahNameArabic(_currentSurahNumber),
-                              style: GoogleFonts.amiriQuran(
-                                fontSize: 28,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                        // Surah Info
+                        Positioned(
+                          left: 20,
+                          right: 20,
+                          bottom: 20,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Text(
+                                quran.getSurahNameArabic(_currentSurahNumber),
+                                style: GoogleFonts.amiriQuran(
+                                  fontSize: 28,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                _buildSurahInfoChip(
-                                  quran.getPlaceOfRevelation(
-                                            _currentSurahNumber,
-                                          ) ==
-                                          'Makkah'
-                                      ? localizations.translate(
-                                          'revelation_mecca',
-                                        )
-                                      : localizations.translate(
-                                          'revelation_medina',
-                                        ),
-                                ),
-                                const SizedBox(width: 8),
-                                _buildSurahInfoChip(
-                                  '${quran.getVerseCount(_currentSurahNumber)} ${localizations.translate('verses')}',
-                                ),
-                                const SizedBox(width: 8),
-                                _buildSurahInfoChip(
-                                  'صفحة $_currentVisiblePage',
-                                ),
-                              ],
-                            ),
-                          ],
+                              const SizedBox(height: 4),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _buildSurahInfoChip(
+                                    quran.getPlaceOfRevelation(
+                                              _currentSurahNumber,
+                                            ) ==
+                                            'Makkah'
+                                        ? localizations.translate(
+                                            'revelation_mecca',
+                                          )
+                                        : localizations.translate(
+                                            'revelation_medina',
+                                          ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _buildSurahInfoChip(
+                                    '${quran.getVerseCount(_currentSurahNumber)} ${localizations.translate('verses')}',
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _buildSurahInfoChip(
+                                    'صفحة $_currentVisiblePage',
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
 
               SliverFillRemaining(
                 hasScrollBody: false,
@@ -696,16 +803,21 @@ $verseText
                     color: isDark
                         ? const Color(0xFF0F1629)
                         : const Color(0xFFFAF8F5),
-                    borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(24),
-                    ),
+                    borderRadius: isReaderCollapsed
+                        ? BorderRadius.zero
+                        : const BorderRadius.vertical(top: Radius.circular(24)),
                   ),
                   child: Column(
                     children: [
-                      _buildReaderOptionsBar(theme),
+                      if (!isReaderCollapsed) _buildReaderOptionsBar(theme),
                       Expanded(
                         child: Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 6, 12, 78),
+                          padding: EdgeInsets.fromLTRB(
+                            isReaderCollapsed ? 8 : 12,
+                            isReaderCollapsed ? 0 : 6,
+                            isReaderCollapsed ? 8 : 12,
+                            pageBottomInset,
+                          ),
                           child: PageView.builder(
                             controller: _pageController,
                             reverse:
@@ -721,6 +833,7 @@ $verseText
                                   theme,
                                   pageNumber: pageNumber,
                                   isDark: isDark,
+                                  isCompact: isReaderCollapsed,
                                 );
                               }
                               return _buildMushafPage(
@@ -728,6 +841,7 @@ $verseText
                                 theme,
                                 pageNumber: pageNumber,
                                 isDark: isDark,
+                                isCompact: isReaderCollapsed,
                               );
                             },
                           ),
@@ -745,8 +859,19 @@ $verseText
             left: 0,
             right: 0,
             bottom: 0,
-            child: _buildBottomNavigation(context, theme),
+            child: _buildBottomNavigation(
+              context,
+              theme,
+              isCompact: isReaderCollapsed,
+            ),
           ),
+          if (isReaderCollapsed)
+            Positioned(
+              left: 8,
+              right: 8,
+              top: 0,
+              child: _buildCollapsedTopOverlay(theme),
+            ),
         ],
       ),
     );
@@ -767,11 +892,18 @@ $verseText
   }
 
   TextStyle _medinaVerseStyle(double size, Color color) {
+    final lineHeight = size >= 34
+        ? 1.82
+        : size >= 30
+        ? 1.9
+        : size >= 26
+        ? 1.98
+        : 2.05;
     return GoogleFonts.amiriQuran(
       fontSize: size,
       color: color,
       fontWeight: FontWeight.w400,
-      height: 2.15,
+      height: lineHeight,
       letterSpacing: 0.1,
     );
   }
@@ -789,7 +921,7 @@ $verseText
             _PageVerse(
               surahNumber: surah,
               verseNumber: verse,
-              text: quran.getVerse(surah, verse),
+              text: _normalizeQuranTextForDisplay(quran.getVerse(surah, verse)),
             ),
           );
         }
@@ -797,6 +929,12 @@ $verseText
     }
     _pageVersesCache[pageNumber] = verses;
     return verses;
+  }
+
+  String _normalizeQuranTextForDisplay(String input) {
+    // Quran package may contain U+065E in places where common mushaf UIs expect
+    // a visible dammatan mark (U+064C). Normalize it for consistent rendering.
+    return input.replaceAll('\u065E', '\u064C');
   }
 
   Future<void> _jumpToPage(int pageNumber) async {
@@ -949,6 +1087,81 @@ $verseText
     );
   }
 
+  Future<void> _showVerseActionsSheet(_PageVerse verse, ThemeData theme) async {
+    final isBookmarked = _isVerseBookmarked(verse.surahNumber, verse.verseNumber);
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: BoxDecoration(
+            color: theme.cardColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: theme.dividerColor,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    '${quran.getSurahNameArabic(verse.surahNumber)} - آية ${verse.verseNumber}',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: Icon(
+                    isBookmarked
+                        ? Icons.bookmark_rounded
+                        : Icons.bookmark_add_rounded,
+                    color: theme.colorScheme.secondary,
+                  ),
+                  title: Text(isBookmarked ? 'إزالة الفاصل' : 'إضافة إلى الفواصل'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _toggleVerseBookmark(verse.surahNumber, verse.verseNumber);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.copy_rounded),
+                  title: const Text('نسخ الآية'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _copyVerse(verse.surahNumber, verse.verseNumber);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.share_rounded),
+                  title: const Text('مشاركة الآية'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _shareVerse(verse.surahNumber, verse.verseNumber);
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   String _normalizeArabicText(String input) {
     final noTashkeel = input.replaceAll(
       RegExp(r'[\u064B-\u0652\u0670\u0640]'),
@@ -1034,6 +1247,7 @@ $verseText
     ThemeData theme, {
     required int pageNumber,
     required bool isDark,
+    bool isCompact = false,
   }) {
     final verses = _getVersesForPage(pageNumber);
     if (verses.isEmpty) return const SizedBox.shrink();
@@ -1048,8 +1262,13 @@ $verseText
         : const Color(0xFF1A1A1A);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+      margin: EdgeInsets.only(bottom: isCompact ? 2 : 8),
+      padding: EdgeInsets.fromLTRB(
+        isCompact ? 12 : 16,
+        isCompact ? 10 : 16,
+        isCompact ? 12 : 16,
+        isCompact ? 8 : 10,
+      ),
       decoration: BoxDecoration(
         color: cardColor,
         borderRadius: BorderRadius.circular(18),
@@ -1144,6 +1363,7 @@ $verseText
     ThemeData theme, {
     required int pageNumber,
     required bool isDark,
+    bool isCompact = false,
   }) {
     final verses = _getVersesForPage(pageNumber);
     if (verses.isEmpty) {
@@ -1165,10 +1385,31 @@ $verseText
     final firstSurah = verses.first.surahNumber;
     final showBasmala =
         verses.first.verseNumber == 1 && firstSurah != 1 && firstSurah != 9;
+    final verseStyle = _medinaVerseStyle(_fontSize, verseTextColor);
+    final verseSpans = <InlineSpan>[];
+    for (var i = 0; i < verses.length; i++) {
+      final verse = verses[i];
+      verseSpans.add(
+        TextSpan(
+          text: '${verse.text}  ﴿${verse.verseNumber}﴾',
+          style: verseStyle,
+          recognizer: TapGestureRecognizer()
+            ..onTap = () => _showVerseActionsSheet(verse, theme),
+        ),
+      );
+      if (i != verses.length - 1) {
+        verseSpans.add(const TextSpan(text: '  '));
+      }
+    }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 10),
+      margin: EdgeInsets.only(bottom: isCompact ? 2 : 8),
+      padding: EdgeInsets.fromLTRB(
+        isCompact ? 12 : 18,
+        isCompact ? 10 : 16,
+        isCompact ? 12 : 18,
+        isCompact ? 8 : 10,
+      ),
       decoration: BoxDecoration(
         color: quranCardColor,
         borderRadius: BorderRadius.circular(18),
@@ -1209,13 +1450,37 @@ $verseText
             ),
           const SizedBox(height: 10),
           Expanded(
-            child: SingleChildScrollView(
-              child: Text(
-                pageText,
-                textAlign: TextAlign.justify,
-                textDirection: TextDirection.rtl,
-                style: _medinaVerseStyle(_fontSize, verseTextColor),
-              ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final painter = TextPainter(
+                  text: TextSpan(text: pageText, style: verseStyle),
+                  textDirection: TextDirection.rtl,
+                  textAlign: TextAlign.justify,
+                  textWidthBasis: TextWidthBasis.parent,
+                )..layout(maxWidth: constraints.maxWidth);
+                final fits = painter.height <= constraints.maxHeight - 6;
+
+                final textWidget = RichText(
+                  text: TextSpan(children: verseSpans),
+                  textAlign: TextAlign.justify,
+                  textDirection: TextDirection.rtl,
+                );
+
+                if (fits) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: textWidget,
+                  );
+                }
+
+                return ScrollConfiguration(
+                  behavior: const _NoGlowScrollBehavior(),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: textWidget,
+                  ),
+                );
+              },
             ),
           ),
           if (_showTranslation)
@@ -1267,6 +1532,24 @@ $verseText
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Row(
+              children: [
+                Text(
+                  'خيارات القراءة',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.secondary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () => _setTopOptionsExpanded(false),
+                  icon: const Icon(Icons.unfold_less_rounded, size: 18),
+                  label: const Text('تقليص'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -1352,6 +1635,79 @@ $verseText
     );
   }
 
+  Widget _buildCollapsedTopOverlay(ThemeData theme) {
+    return SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            _buildMiniTopButton(
+              theme: theme,
+              icon: Icons.arrow_back_ios_rounded,
+              label: 'رجوع',
+              onTap: () => Navigator.pop(context),
+            ),
+            const SizedBox(width: 6),
+            _buildMiniTopButton(
+              theme: theme,
+              icon: Icons.text_decrease_rounded,
+              label: 'A-',
+              onTap: () => _setFontSize(_fontSize - 2),
+            ),
+            const SizedBox(width: 6),
+            _buildMiniTopButton(
+              theme: theme,
+              icon: Icons.text_increase_rounded,
+              label: 'A+',
+              onTap: () => _setFontSize(_fontSize + 2),
+            ),
+            const Spacer(),
+            _buildMiniTopButton(
+              theme: theme,
+              icon: Icons.unfold_more_rounded,
+              label: 'تمدد',
+              onTap: () => _setTopOptionsExpanded(true),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMiniTopButton({
+    required ThemeData theme,
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: theme.cardColor.withValues(alpha: 0.9),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: theme.colorScheme.secondary),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.secondary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildTopOptionAction({
     required ThemeData theme,
     required IconData icon,
@@ -1381,16 +1737,22 @@ $verseText
     );
   }
 
-  Widget _buildBottomNavigation(BuildContext context, ThemeData theme) {
+  Widget _buildBottomNavigation(
+    BuildContext context,
+    ThemeData theme, {
+    bool isCompact = false,
+  }) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+      padding: EdgeInsets.fromLTRB(14, isCompact ? 4 : 8, 14, isCompact ? 8 : 14),
       decoration: BoxDecoration(
         color: theme.cardColor,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(isCompact ? 14 : 18),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 14,
+            blurRadius: isCompact ? 10 : 14,
             offset: const Offset(0, -3),
           ),
         ],
@@ -1407,12 +1769,16 @@ $verseText
                   : null,
               tooltip: 'التالي',
               theme: theme,
+              compact: isCompact,
             ),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              padding: EdgeInsets.symmetric(
+                horizontal: isCompact ? 12 : 14,
+                vertical: isCompact ? 5 : 7,
+              ),
               decoration: BoxDecoration(
                 color: theme.colorScheme.secondary.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(isCompact ? 12 : 14),
               ),
               child: Text(
                 'صفحة $_currentVisiblePage',
@@ -1429,6 +1795,7 @@ $verseText
                   : null,
               tooltip: 'السابق',
               theme: theme,
+              compact: isCompact,
             ),
           ],
         ),
@@ -1441,6 +1808,7 @@ $verseText
     required VoidCallback? onTap,
     required String tooltip,
     required ThemeData theme,
+    bool compact = false,
   }) {
     return Tooltip(
       message: tooltip,
@@ -1448,8 +1816,8 @@ $verseText
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Container(
-          width: 44,
-          height: 40,
+          width: compact ? 40 : 44,
+          height: compact ? 36 : 40,
           decoration: BoxDecoration(
             color: onTap == null
                 ? theme.disabledColor.withValues(alpha: 0.15)
@@ -1522,8 +1890,8 @@ $verseText
                         icon: const Icon(Icons.remove_circle_outline),
                         onPressed: () {
                           if (_fontSize > 18) {
-                            setSheetState(() => _fontSize -= 2);
-                            setState(() {});
+                            final next = (_fontSize - 2).clamp(18.0, 40.0);
+                            _setFontSize(next);
                           }
                         },
                       ),
@@ -1535,8 +1903,13 @@ $verseText
                           divisions: 11,
                           activeColor: theme.colorScheme.secondary,
                           onChanged: (value) {
-                            setSheetState(() => _fontSize = value);
-                            setState(() {});
+                            setSheetState(() {});
+                            setState(() {
+                              _fontSize = value;
+                            });
+                          },
+                          onChangeEnd: (value) {
+                            _setFontSize(value);
                           },
                         ),
                       ),
@@ -1544,8 +1917,8 @@ $verseText
                         icon: const Icon(Icons.add_circle_outline),
                         onPressed: () {
                           if (_fontSize < 40) {
-                            setSheetState(() => _fontSize += 2);
-                            setState(() {});
+                            final next = (_fontSize + 2).clamp(18.0, 40.0);
+                            _setFontSize(next);
                           }
                         },
                       ),
@@ -1562,6 +1935,7 @@ $verseText
                     onChanged: (value) {
                       setSheetState(() => _showTranslation = value);
                       setState(() {});
+                      _saveReaderPreferences();
                     },
                   ),
 
@@ -1586,6 +1960,19 @@ class _PageVerse {
     required this.verseNumber,
     required this.text,
   });
+}
+
+class _NoGlowScrollBehavior extends ScrollBehavior {
+  const _NoGlowScrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    return child;
+  }
 }
 
 /// Custom painter for Quran paper pattern background

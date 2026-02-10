@@ -17,48 +17,62 @@ class NotificationService {
       FlutterLocalNotificationsPlugin();
 
   bool _isInitialized = false;
+  Future<void>? _initializing;
   int _androidSdkVersion = 0;
 
   Future<void> init() async {
     if (_isInitialized) return;
-
-    await _initializeLocalTimezone();
-
-    // Get Android SDK version for compatibility
-    if (Platform.isAndroid) {
-      final deviceInfo = DeviceInfoPlugin();
-      final androidInfo = await deviceInfo.androidInfo;
-      _androidSdkVersion = androidInfo.version.sdkInt;
-      debugPrint('Android SDK Version: $_androidSdkVersion');
+    if (_initializing != null) {
+      await _initializing;
+      return;
     }
 
-    const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+    _initializing = _performInitialization();
+    await _initializing;
+  }
 
-    const DarwinInitializationSettings initializationSettingsIOS =
-        DarwinInitializationSettings(
-          requestAlertPermission: true,
-          requestBadgePermission: true,
-          requestSoundPermission: true,
-        );
+  Future<void> _performInitialization() async {
+    try {
+      await _initializeLocalTimezone();
 
-    const InitializationSettings initializationSettings =
-        InitializationSettings(
-          android: initializationSettingsAndroid,
-          iOS: initializationSettingsIOS,
-        );
+      // Get Android SDK version for compatibility
+      if (Platform.isAndroid) {
+        final deviceInfo = DeviceInfoPlugin();
+        final androidInfo = await deviceInfo.androidInfo;
+        _androidSdkVersion = androidInfo.version.sdkInt;
+        debugPrint('Android SDK Version: $_androidSdkVersion');
+      }
 
-    await flutterLocalNotificationsPlugin.initialize(
-      initializationSettings,
-      onDidReceiveNotificationResponse: _onNotificationTapped,
-      onDidReceiveBackgroundNotificationResponse:
-          _onBackgroundNotificationTapped,
-    );
+      const AndroidInitializationSettings initializationSettingsAndroid =
+          AndroidInitializationSettings('@mipmap/ic_launcher');
 
-    await _createNotificationChannels();
-    await _requestPermissions();
+      const DarwinInitializationSettings initializationSettingsIOS =
+          DarwinInitializationSettings(
+            requestAlertPermission: true,
+            requestBadgePermission: true,
+            requestSoundPermission: true,
+          );
 
-    _isInitialized = true;
+      const InitializationSettings initializationSettings =
+          InitializationSettings(
+            android: initializationSettingsAndroid,
+            iOS: initializationSettingsIOS,
+          );
+
+      await flutterLocalNotificationsPlugin.initialize(
+        initializationSettings,
+        onDidReceiveNotificationResponse: _onNotificationTapped,
+        onDidReceiveBackgroundNotificationResponse:
+            _onBackgroundNotificationTapped,
+      );
+
+      await _createNotificationChannels();
+      await _requestPermissions();
+
+      _isInitialized = true;
+    } finally {
+      _initializing = null;
+    }
   }
 
   void _onNotificationTapped(NotificationResponse response) {
@@ -281,6 +295,8 @@ class NotificationService {
     // Schedule for the next 7 days
     int notificationId = 0;
     final now = DateTime.now();
+    DateTime? nextEnabledPrayerTime;
+    String? nextEnabledPrayerName;
 
     for (int day = 0; day < 7; day++) {
       final date = now.add(Duration(days: day));
@@ -312,6 +328,12 @@ class NotificationService {
 
         // Skip if prayer time has passed (only for today)
         if (prayerTime.isBefore(now)) continue;
+
+        if (nextEnabledPrayerTime == null ||
+            prayerTime.isBefore(nextEnabledPrayerTime)) {
+          nextEnabledPrayerTime = prayerTime;
+          nextEnabledPrayerName = prayerNameAr;
+        }
 
         if (prayerTimeNotificationsEnabled) {
           await _scheduleNotification(
@@ -348,8 +370,17 @@ class NotificationService {
       }
     }
 
+    if (notificationId == 0) {
+      await _stopCountdownService();
+      debugPrint('No upcoming enabled prayers found to schedule');
+      return;
+    }
+
     // Start native countdown service
-    await _startCountdownService(prayerTimes);
+    await _startCountdownService(
+      prayerName: nextEnabledPrayerName,
+      targetTime: nextEnabledPrayerTime,
+    );
 
     debugPrint('Scheduled $notificationId notifications');
   }
@@ -447,10 +478,6 @@ class NotificationService {
             enableVibration: enableVibration,
             category: AndroidNotificationCategory.alarm,
             visibility: NotificationVisibility.public,
-            icon: '@mipmap/ic_launcher',
-            largeIcon: const DrawableResourceAndroidBitmap(
-              '@mipmap/ic_launcher',
-            ),
             styleInformation: BigTextStyleInformation(
               body,
               contentTitle: title,
@@ -505,28 +532,30 @@ class NotificationService {
     }
   }
 
-  Future<void> _startCountdownService(PrayerTimes prayerTimes) async {
-    final next = prayerTimes.nextPrayer();
-    if (next == Prayer.none) return;
-
-    final nextTime = prayerTimes.timeForPrayer(next);
-    if (nextTime == null) return;
-
-    final prayerNames = {
-      Prayer.fajr: 'الفجر',
-      Prayer.dhuhr: 'الظهر',
-      Prayer.asr: 'العصر',
-      Prayer.maghrib: 'المغرب',
-      Prayer.isha: 'العشاء',
-    };
+  Future<void> _startCountdownService({
+    required String? prayerName,
+    required DateTime? targetTime,
+  }) async {
+    if (prayerName == null || targetTime == null) {
+      await _stopCountdownService();
+      return;
+    }
 
     try {
       await platform.invokeMethod('startCountdown', {
-        'prayer_name': prayerNames[next] ?? next.name.toUpperCase(),
-        'target_time': nextTime.millisecondsSinceEpoch,
+        'prayer_name': prayerName,
+        'target_time': targetTime.millisecondsSinceEpoch,
       });
     } on PlatformException catch (e) {
       debugPrint("Failed to start countdown service: '${e.message}'.");
+    }
+  }
+
+  Future<void> _stopCountdownService() async {
+    try {
+      await platform.invokeMethod('stopCountdown');
+    } on PlatformException catch (e) {
+      debugPrint("Failed to stop countdown service: '${e.message}'.");
     }
   }
 
@@ -585,6 +614,7 @@ class NotificationService {
 
   Future<void> cancelAll() async {
     await flutterLocalNotificationsPlugin.cancelAll();
+    await _stopCountdownService();
   }
 
   Future<void> cancelNotification(int id) async {
@@ -592,7 +622,14 @@ class NotificationService {
   }
 
   Future<List<PendingNotificationRequest>> getPendingNotifications() async {
-    return await flutterLocalNotificationsPlugin.pendingNotificationRequests();
+    try {
+      return await flutterLocalNotificationsPlugin.pendingNotificationRequests();
+    } catch (e) {
+      // Some OEM Android builds throw when querying scheduled requests.
+      // Return an empty list so diagnostics can continue with partial data.
+      debugPrint('Failed to read pending notifications: $e');
+      return const [];
+    }
   }
 
   // Get notification permission status
