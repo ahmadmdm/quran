@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:adhan/adhan.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/services.dart';
+import 'dart:convert';
 import '../../core/localization/app_localizations.dart';
 import '../../core/utils/location_service.dart';
 import '../../core/utils/notification_sound_support.dart';
@@ -9,7 +11,6 @@ import '../providers/locale_provider.dart';
 import '../providers/settings_provider.dart';
 import '../providers/prayer_provider.dart';
 import '../providers/notification_provider.dart';
-import 'innovation_lab_page.dart';
 
 import 'widget_customization_page.dart';
 
@@ -63,20 +64,6 @@ class SettingsPage extends ConsumerWidget {
           ),
           _buildSettingsTile(
             context,
-            icon: Icons.auto_awesome,
-            title: 'Innovation Lab',
-            subtitle: 'Feature flags, profiles, backup, analytics',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const InnovationLabPage(),
-                ),
-              );
-            },
-          ),
-          _buildSettingsTile(
-            context,
             icon: Icons.location_on,
             title: localizations.translate('location'),
             subtitle: settings.useManualLocation
@@ -95,6 +82,15 @@ class SettingsPage extends ConsumerWidget {
           ),
           _buildSettingsTile(
             context,
+            icon: Icons.satellite_alt,
+            title: 'مصدر الموقع',
+            subtitle: LocationService.getSourceDescription(
+              settings.locationSourceMode,
+            ),
+            onTap: () => _handleLocationSourceTap(context, ref, settings),
+          ),
+          _buildSettingsTile(
+            context,
             icon: Icons.notifications,
             title: localizations.translate('notifications'),
             subtitle: settings.areNotificationsEnabled
@@ -102,6 +98,28 @@ class SettingsPage extends ConsumerWidget {
                 : localizations.translate('disabled'),
             onTap: () =>
                 _handleNotificationsTap(context, ref, settings, localizations),
+          ),
+          _buildSettingsTile(
+            context,
+            icon: Icons.view_carousel_rounded,
+            title: 'Smart Stack للويدجت',
+            subtitle: settings.smartWidgetStackEnabled ? 'مفعل' : 'معطل',
+            onTap: () => ref
+                .read(settingsProvider.notifier)
+                .setSmartWidgetStackEnabled(!settings.smartWidgetStackEnabled),
+          ),
+          _buildSettingsTile(
+            context,
+            icon: Icons.tips_and_updates_rounded,
+            title: 'فحص استباقي للإشعارات',
+            subtitle: settings.proactiveNotificationGuardEnabled
+                ? 'مفعل'
+                : 'معطل',
+            onTap: () => ref
+                .read(settingsProvider.notifier)
+                .setProactiveNotificationGuardEnabled(
+                  !settings.proactiveNotificationGuardEnabled,
+                ),
           ),
           if (settings.areNotificationsEnabled) ...[
             _buildSettingsTile(
@@ -133,6 +151,31 @@ class SettingsPage extends ConsumerWidget {
                   ? localizations.translate('enabled')
                   : localizations.translate('disabled'),
               onTap: () => _handleVibrationToggle(context, ref, settings),
+            ),
+            _buildSettingsTile(
+              context,
+              icon: Icons.layers_clear_rounded,
+              title: 'تنبيهات متعددة المستويات',
+              subtitle: settings.multiLevelRemindersEnabled
+                  ? '15 / 10 / 5 دقائق'
+                  : 'تنبيه واحد فقط',
+              onTap: () async {
+                await ref
+                    .read(settingsProvider.notifier)
+                    .setMultiLevelRemindersEnabled(
+                      !settings.multiLevelRemindersEnabled,
+                    );
+                await _applyNotificationSettings(ref);
+              },
+            ),
+            _buildSettingsTile(
+              context,
+              icon: Icons.volume_off_rounded,
+              title: 'وضع المسجد التلقائي',
+              subtitle: settings.autoMosqueModeEnabled
+                  ? 'قبل الصلاة ${settings.autoMosqueModeLeadMinutes} د وبعدها ${settings.autoMosqueModeRestoreMinutes} د'
+                  : 'معطل',
+              onTap: () => _showMosqueModeDialog(context, ref, settings),
             ),
           ],
 
@@ -205,6 +248,17 @@ class SettingsPage extends ConsumerWidget {
             title: 'وضع شاشة الفولد',
             subtitle: _getFoldPaneModeName(settings.foldPaneMode),
             onTap: () => _handleFoldPaneModeTap(context, ref, settings),
+          ),
+          _buildSettingsTile(
+            context,
+            icon: Icons.open_in_full_rounded,
+            title: 'تمدد صفحة القرآن في الفولد',
+            subtitle: settings.quranFoldStretchPage ? 'مفعل' : 'معطل',
+            onTap: () async {
+              await ref
+                  .read(settingsProvider.notifier)
+                  .setQuranFoldStretchPage(!settings.quranFoldStretchPage);
+            },
           ),
         ],
       ),
@@ -289,13 +343,9 @@ class SettingsPage extends ConsumerWidget {
   String _getFoldPaneModeName(FoldPaneMode mode) {
     switch (mode) {
       case FoldPaneMode.auto:
-        return 'تلقائي';
-      case FoldPaneMode.left:
-        return 'اللوح الأيسر';
-      case FoldPaneMode.right:
-        return 'اللوح الأيمن';
+        return 'لوح واحد (موصى به)';
       case FoldPaneMode.span:
-        return 'تمديد على الشاشة كاملة';
+        return 'لوحين مع لوحة مساعدة';
     }
   }
 
@@ -341,13 +391,28 @@ class SettingsPage extends ConsumerWidget {
             ListTile(
               leading: const Icon(Icons.gps_fixed),
               title: Text(localizations.translate('auto_detect')),
-              subtitle: const Text('استخدام GPS تلقائيًا'),
+              subtitle: Text(
+                'المصدر الحالي: ${LocationService.getSourceDescription(settings.locationSourceMode)}',
+              ),
               onTap: () async {
                 Navigator.pop(bottomSheetContext);
                 await ref.read(settingsProvider.notifier).setUseAutoLocation();
                 ref.invalidate(userLocationProvider);
                 ref.invalidate(cityNameProvider);
                 ref.invalidate(prayerTimesProvider);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.satellite_alt),
+              title: const Text('تحديد مصدر الموقع'),
+              subtitle: Text(
+                LocationService.getSourceDescription(
+                  settings.locationSourceMode,
+                ),
+              ),
+              onTap: () {
+                Navigator.pop(bottomSheetContext);
+                _handleLocationSourceTap(context, ref, settings);
               },
             ),
             ListTile(
@@ -411,6 +476,59 @@ class SettingsPage extends ConsumerWidget {
     );
   }
 
+  void _handleLocationSourceTap(
+    BuildContext context,
+    WidgetRef ref,
+    SettingsState settings,
+  ) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('مصدر الموقع'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: LocationFetchSource.values.map((source) {
+            final subtitle = switch (source) {
+              LocationFetchSource.hybrid => 'الأفضل غالبًا للدقة والثبات',
+              LocationFetchSource.gps => 'أدق غالبًا لكن قد يستهلك بطارية أكثر',
+              LocationFetchSource.network => 'أسرع وأخف لكن أقل دقة',
+            };
+            return _buildChoiceTile(
+              context,
+              title: Text(LocationService.getSourceDescription(source)),
+              subtitle: Text(
+                subtitle,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).textTheme.bodySmall?.color,
+                ),
+              ),
+              selected: settings.locationSourceMode == source,
+              onTap: () async {
+                await ref
+                    .read(settingsProvider.notifier)
+                    .setLocationSourceMode(source);
+                if (!context.mounted) return;
+                Navigator.pop(context);
+                ref.invalidate(userLocationProvider);
+                ref.invalidate(cityNameProvider);
+                ref.invalidate(prayerTimesProvider);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'تم تغيير مصدر الموقع إلى: ${LocationService.getSourceDescription(source)}',
+                    ),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              },
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
   void _handleNotificationsTap(
     BuildContext context,
     WidgetRef ref,
@@ -429,7 +547,8 @@ class SettingsPage extends ConsumerWidget {
                 left: 16,
                 right: 16,
                 top: 16,
-                bottom: MediaQuery.of(bottomSheetContext).viewInsets.bottom + 16,
+                bottom:
+                    MediaQuery.of(bottomSheetContext).viewInsets.bottom + 16,
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -455,7 +574,9 @@ class SettingsPage extends ConsumerWidget {
                     },
                   ),
                   SwitchListTile(
-                    title: Text(localizations.translate('notification_pre_prayer')),
+                    title: Text(
+                      localizations.translate('notification_pre_prayer'),
+                    ),
                     subtitle: const Text('تنبيه قبل الأذان حسب المدة المحددة'),
                     value: currentSettings.prePrayerRemindersEnabled,
                     onChanged: (value) async {
@@ -491,8 +612,11 @@ class SettingsPage extends ConsumerWidget {
                     dense: true,
                     title: const Text('الظهر'),
                     value: currentSettings.dhuhrNotificationsEnabled,
-                    onChanged: (value) async =>
-                        _togglePrayerNotification(modalRef, Prayer.dhuhr, value),
+                    onChanged: (value) async => _togglePrayerNotification(
+                      modalRef,
+                      Prayer.dhuhr,
+                      value,
+                    ),
                   ),
                   SwitchListTile(
                     dense: true,
@@ -505,8 +629,11 @@ class SettingsPage extends ConsumerWidget {
                     dense: true,
                     title: const Text('المغرب'),
                     value: currentSettings.maghribNotificationsEnabled,
-                    onChanged: (value) async =>
-                        _togglePrayerNotification(modalRef, Prayer.maghrib, value),
+                    onChanged: (value) async => _togglePrayerNotification(
+                      modalRef,
+                      Prayer.maghrib,
+                      value,
+                    ),
                   ),
                   SwitchListTile(
                     dense: true,
@@ -558,7 +685,8 @@ class SettingsPage extends ConsumerWidget {
                     subtitle: const Text(
                       'عرض الأذونات وعدد الإشعارات المجدولة حاليًا',
                     ),
-                    onTap: () => _showNotificationDiagnostics(context, modalRef),
+                    onTap: () =>
+                        _showNotificationDiagnostics(context, modalRef),
                   ),
                 ],
               ),
@@ -811,7 +939,84 @@ class SettingsPage extends ConsumerWidget {
           notificationSound: settings.notificationSound,
           vibrationEnabled: settings.vibrationEnabled,
           enabledPrayers: enabledPrayers,
+          multiLevelRemindersEnabled: settings.multiLevelRemindersEnabled,
+          suppressImmediateRemindersWindowMinutes: 20,
         );
+  }
+
+  void _showMosqueModeDialog(
+    BuildContext context,
+    WidgetRef ref,
+    SettingsState settings,
+  ) {
+    final leadController = TextEditingController(
+      text: settings.autoMosqueModeLeadMinutes.toString(),
+    );
+    final restoreController = TextEditingController(
+      text: settings.autoMosqueModeRestoreMinutes.toString(),
+    );
+    var enabled = settings.autoMosqueModeEnabled;
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text('وضع المسجد التلقائي'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SwitchListTile(
+                  title: const Text('تفعيل الوضع التلقائي'),
+                  value: enabled,
+                  onChanged: (value) => setState(() => enabled = value),
+                ),
+                TextField(
+                  controller: leadController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'قبل الصلاة (دقائق)',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: restoreController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'الرجوع بعد الصلاة (دقائق)',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إلغاء'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  final lead = int.tryParse(leadController.text.trim()) ?? 10;
+                  final restore =
+                      int.tryParse(restoreController.text.trim()) ?? 20;
+                  await ref
+                      .read(settingsProvider.notifier)
+                      .setAutoMosqueModeEnabled(enabled);
+                  await ref
+                      .read(settingsProvider.notifier)
+                      .setAutoMosqueModeLeadMinutes(lead);
+                  await ref
+                      .read(settingsProvider.notifier)
+                      .setAutoMosqueModeRestoreMinutes(restore);
+                  if (!context.mounted) return;
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('حفظ'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _handleNotificationToggle(
@@ -872,6 +1077,7 @@ class SettingsPage extends ConsumerWidget {
         'batteryOptimization': false,
       };
       List<PendingNotificationRequest> pending = const [];
+      Map<String, Object?> healthSnapshot = const {};
 
       try {
         permissionStatus = await service.getPermissionStatus();
@@ -883,12 +1089,18 @@ class SettingsPage extends ConsumerWidget {
       } catch (e) {
         errors.add('تعذر قراءة الإشعارات المجدولة');
       }
+      try {
+        healthSnapshot = service.getSchedulingHealthSnapshot();
+      } catch (e) {
+        errors.add('تعذر قراءة حالة جدولة الإشعارات');
+      }
 
       final settings = ref.read(settingsProvider);
       return _NotificationDiagnosticsData(
         permissionStatus: permissionStatus,
         pendingCount: pending.length,
         pendingSample: pending.take(8).toList(),
+        healthSnapshot: healthSnapshot,
         settings: settings,
         warningMessage: errors.isEmpty ? null : errors.join(' - '),
       );
@@ -923,10 +1135,17 @@ class SettingsPage extends ConsumerWidget {
 
                     final data = snapshot.data!;
                     final status = data.permissionStatus;
-                    final notificationsAllowed = status['notifications'] == true;
+                    final notificationsAllowed =
+                        status['notifications'] == true;
                     final exactAlarmsAllowed = status['exactAlarms'] == true;
                     final batteryOptimizationAllowed =
                         status['batteryOptimization'] == true;
+                    final health = _buildDiagnosticsHealthReport(
+                      data: data,
+                      notificationsAllowed: notificationsAllowed,
+                      exactAlarmsAllowed: exactAlarmsAllowed,
+                      batteryOptimizationAllowed: batteryOptimizationAllowed,
+                    );
 
                     String yesNo(bool value) => value ? 'مسموح' : 'غير مسموح';
 
@@ -978,12 +1197,44 @@ class SettingsPage extends ConsumerWidget {
                           ),
                           const SizedBox(height: 8),
                           Text('إذن الإشعارات: ${yesNo(notificationsAllowed)}'),
-                          Text(
-                            'Exact Alarms: ${yesNo(exactAlarmsAllowed)}',
-                          ),
+                          Text('Exact Alarms: ${yesNo(exactAlarmsAllowed)}'),
                           Text(
                             'استثناء البطارية: ${yesNo(batteryOptimizationAllowed)}',
                           ),
+                          const SizedBox(height: 14),
+                          Text(
+                            'Health Check',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.secondary,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(
+                                health.isHealthy
+                                    ? Icons.check_circle
+                                    : Icons.warning_amber_rounded,
+                                color: health.isHealthy
+                                    ? Colors.green
+                                    : Colors.orange,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  health.summary,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (health.issues.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            ...health.issues.map((issue) => Text('• $issue')),
+                          ],
                           const SizedBox(height: 14),
                           Text(
                             'الجدولة الحالية',
@@ -994,6 +1245,15 @@ class SettingsPage extends ConsumerWidget {
                           ),
                           const SizedBox(height: 8),
                           Text('عدد الإشعارات المجدولة: ${data.pendingCount}'),
+                          Text(
+                            'آخر جدولة: ${data.healthSnapshot['lastRunAt'] ?? 'غير متوفر'}',
+                          ),
+                          Text(
+                            'نجاح/فشل آخر مرة: ${data.healthSnapshot['lastScheduledCount'] ?? 0}/${data.healthSnapshot['lastFailedScheduleCount'] ?? 0}',
+                          ),
+                          Text(
+                            'Timezone: ${data.healthSnapshot['lastTimezone'] ?? 'unknown'}',
+                          ),
                           const SizedBox(height: 8),
                           if (data.pendingSample.isEmpty)
                             const Text('لا توجد إشعارات مجدولة حاليًا')
@@ -1021,6 +1281,40 @@ class SettingsPage extends ConsumerWidget {
                     setState(() {});
                   },
                   child: const Text('تحديث'),
+                ),
+                FilledButton.tonal(
+                  onPressed: () async {
+                    await ref
+                        .read(notificationServiceProvider)
+                        .requestCriticalAlarmPermissions();
+                    await _applyNotificationSettings(ref);
+                    if (dialogContext.mounted) {
+                      ScaffoldMessenger.of(dialogContext).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'تم تنفيذ الإصلاح التلقائي وإعادة جدولة الإشعارات',
+                          ),
+                        ),
+                      );
+                    }
+                    setState(() {});
+                  },
+                  child: const Text('إصلاح تلقائي'),
+                ),
+                FilledButton.tonal(
+                  onPressed: () async {
+                    final snapshot = await loadDiagnostics();
+                    final report = _buildDiagnosticsExport(snapshot);
+                    await Clipboard.setData(ClipboardData(text: report));
+                    if (dialogContext.mounted) {
+                      ScaffoldMessenger.of(dialogContext).showSnackBar(
+                        const SnackBar(
+                          content: Text('تم نسخ تقرير التشخيص إلى الحافظة'),
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text('تصدير'),
                 ),
               ],
             );
@@ -1170,6 +1464,85 @@ class SettingsPage extends ConsumerWidget {
     );
   }
 
+  _DiagnosticsHealthReport _buildDiagnosticsHealthReport({
+    required _NotificationDiagnosticsData data,
+    required bool notificationsAllowed,
+    required bool exactAlarmsAllowed,
+    required bool batteryOptimizationAllowed,
+  }) {
+    final issues = <String>[];
+    if (!data.settings.areNotificationsEnabled) {
+      issues.add('الإشعارات معطلة من داخل التطبيق');
+    }
+    if (!notificationsAllowed) {
+      issues.add('إذن الإشعارات غير مسموح');
+    }
+    if (!exactAlarmsAllowed) {
+      issues.add('Exact Alarm غير مفعّل (قد تتأخر مواقيت الصلاة)');
+    }
+    if (!batteryOptimizationAllowed) {
+      issues.add('التطبيق غير مستثنى من قيود البطارية');
+    }
+    if (data.pendingCount == 0 && data.settings.areNotificationsEnabled) {
+      issues.add('لا توجد إشعارات مجدولة حاليًا');
+    }
+    final failed =
+        (data.healthSnapshot['lastFailedScheduleCount'] as int?) ?? 0;
+    if (failed > 0) {
+      issues.add('آخر محاولة جدولة بها $failed فشل');
+    }
+
+    if (issues.isEmpty) {
+      return const _DiagnosticsHealthReport(
+        isHealthy: true,
+        summary: 'الحالة ممتازة: لا توجد مشاكل ظاهرة',
+        issues: [],
+      );
+    }
+    return _DiagnosticsHealthReport(
+      isHealthy: false,
+      summary: 'تم رصد ${issues.length} مشكلة تحتاج مراجعة',
+      issues: issues,
+    );
+  }
+
+  String _buildDiagnosticsExport(_NotificationDiagnosticsData data) {
+    final export = <String, Object?>{
+      'generatedAt': DateTime.now().toIso8601String(),
+      'permissionStatus': data.permissionStatus,
+      'pendingCount': data.pendingCount,
+      'pendingSample': data.pendingSample
+          .map(
+            (item) => {
+              'id': item.id,
+              'title': item.title,
+              'body': item.body,
+              'payload': item.payload,
+            },
+          )
+          .toList(),
+      'settings': {
+        'areNotificationsEnabled': data.settings.areNotificationsEnabled,
+        'prayerTimeNotificationsEnabled':
+            data.settings.prayerTimeNotificationsEnabled,
+        'prePrayerRemindersEnabled': data.settings.prePrayerRemindersEnabled,
+        'preAzanReminderOffset': data.settings.preAzanReminderOffset,
+        'notificationSound': data.settings.notificationSound,
+        'vibrationEnabled': data.settings.vibrationEnabled,
+        'enabledPrayers': {
+          'fajr': data.settings.fajrNotificationsEnabled,
+          'dhuhr': data.settings.dhuhrNotificationsEnabled,
+          'asr': data.settings.asrNotificationsEnabled,
+          'maghrib': data.settings.maghribNotificationsEnabled,
+          'isha': data.settings.ishaNotificationsEnabled,
+        },
+      },
+      'healthSnapshot': data.healthSnapshot,
+      'warningMessage': data.warningMessage,
+    };
+    return const JsonEncoder.withIndent('  ').convert(export);
+  }
+
   Widget _buildChoiceTile(
     BuildContext context, {
     required Widget title,
@@ -1196,6 +1569,7 @@ class _NotificationDiagnosticsData {
   final Map<String, bool> permissionStatus;
   final int pendingCount;
   final List<PendingNotificationRequest> pendingSample;
+  final Map<String, Object?> healthSnapshot;
   final SettingsState settings;
   final String? warningMessage;
 
@@ -1203,7 +1577,20 @@ class _NotificationDiagnosticsData {
     required this.permissionStatus,
     required this.pendingCount,
     required this.pendingSample,
+    required this.healthSnapshot,
     required this.settings,
     this.warningMessage,
+  });
+}
+
+class _DiagnosticsHealthReport {
+  final bool isHealthy;
+  final String summary;
+  final List<String> issues;
+
+  const _DiagnosticsHealthReport({
+    required this.isHealthy,
+    required this.summary,
+    required this.issues,
   });
 }

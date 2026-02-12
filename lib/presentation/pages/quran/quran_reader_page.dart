@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:quran/quran.dart' as quran;
 import 'package:google_fonts/google_fonts.dart';
@@ -37,6 +38,13 @@ class _QuranReaderPageState extends State<QuranReaderPage>
       'quran_reader_show_translation';
   static const String _readerTopOptionsExpandedKey =
       'quran_reader_top_options_expanded';
+  static const String _readerFoldStretchPageKey = 'quranFoldStretchPage';
+  static const String _readerReciterKey = 'quran_reader_reciter';
+  static const String _readerAutoFollowAudioKey =
+      'quran_reader_auto_follow_audio';
+  static const String _audioWeekKeyStorage = 'quran_audio_week_key';
+  static const String _audioWeekSecondsStorage = 'quran_audio_week_seconds';
+  static const String _audioWeekVersesStorage = 'quran_audio_week_verses';
 
   late int _currentSurahNumber;
   late final PageController _pageController;
@@ -53,6 +61,19 @@ class _QuranReaderPageState extends State<QuranReaderPage>
   int _selectedHifzVerseIndex = 0;
   bool _hideHifzVerseText = false;
   bool _isTopOptionsExpanded = true;
+  bool _foldStretchPage = false;
+  bool _autoFollowAudio = true;
+  String _selectedReciter = 'Alafasy_128kbps';
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  PlayerState _audioPlayerState = PlayerState.stopped;
+  Duration _audioPosition = Duration.zero;
+  Duration _audioDuration = Duration.zero;
+  String _audioWeekKey = '';
+  int _weeklyListeningSeconds = 0;
+  int _weeklyListeningVerses = 0;
+  final Set<String> _countedVerseKeys = <String>{};
+  int? _playingSurahNumber;
+  int? _playingVerseNumber;
 
   Timer? _focusTimer;
   int _focusTotalSeconds = 0;
@@ -75,8 +96,38 @@ class _QuranReaderPageState extends State<QuranReaderPage>
     );
     _pageController = PageController(initialPage: _currentVisiblePage - 1);
 
+    _audioPlayer.onPlayerStateChanged.listen((state) {
+      if (!mounted) return;
+      setState(() {
+        _audioPlayerState = state;
+        if (state != PlayerState.playing) {
+          _audioPosition = Duration.zero;
+        }
+      });
+    });
+    _audioPlayer.onPositionChanged.listen((position) {
+      final deltaMs = position.inMilliseconds - _audioPosition.inMilliseconds;
+      if (deltaMs > 0) {
+        _trackListeningDelta(delta: Duration(milliseconds: deltaMs));
+      }
+      if (!mounted) return;
+      setState(() {
+        _audioPosition = position;
+      });
+    });
+    _audioPlayer.onDurationChanged.listen((duration) {
+      if (!mounted) return;
+      setState(() {
+        _audioDuration = duration;
+      });
+    });
+    _audioPlayer.onPlayerComplete.listen((_) {
+      _handleAudioComplete();
+    });
+
     _saveLastRead();
     _checkFavorite();
+    _loadWeeklyAudioStats();
   }
 
   void _loadReaderPreferences() {
@@ -91,6 +142,16 @@ class _QuranReaderPageState extends State<QuranReaderPage>
     _isTopOptionsExpanded =
         (box.get(_readerTopOptionsExpandedKey, defaultValue: true) as bool?) ??
         true;
+    _foldStretchPage =
+        (box.get(_readerFoldStretchPageKey, defaultValue: false) as bool?) ??
+        false;
+    _selectedReciter =
+        (box.get(_readerReciterKey, defaultValue: 'Alafasy_128kbps')
+            as String?) ??
+        'Alafasy_128kbps';
+    _autoFollowAudio =
+        (box.get(_readerAutoFollowAudioKey, defaultValue: true) as bool?) ??
+        true;
   }
 
   Future<void> _saveReaderPreferences() async {
@@ -98,6 +159,83 @@ class _QuranReaderPageState extends State<QuranReaderPage>
     await box.put(_readerFontSizeKey, _fontSize);
     await box.put(_readerShowTranslationKey, _showTranslation);
     await box.put(_readerTopOptionsExpandedKey, _isTopOptionsExpanded);
+    await box.put(_readerFoldStretchPageKey, _foldStretchPage);
+    await box.put(_readerReciterKey, _selectedReciter);
+    await box.put(_readerAutoFollowAudioKey, _autoFollowAudio);
+  }
+
+  String _currentWeekKey() {
+    final now = DateTime.now();
+    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    final day = startOfWeek.day.toString().padLeft(2, '0');
+    final month = startOfWeek.month.toString().padLeft(2, '0');
+    return '${startOfWeek.year}-$month-$day';
+  }
+
+  void _loadWeeklyAudioStats() {
+    final box = Hive.box('settings');
+    final currentWeek = _currentWeekKey();
+    final storedWeek =
+        (box.get(_audioWeekKeyStorage, defaultValue: currentWeek) as String?) ??
+        currentWeek;
+    if (storedWeek != currentWeek) {
+      box.put(_audioWeekKeyStorage, currentWeek);
+      box.put(_audioWeekSecondsStorage, 0);
+      box.put(_audioWeekVersesStorage, 0);
+      _audioWeekKey = currentWeek;
+      _weeklyListeningSeconds = 0;
+      _weeklyListeningVerses = 0;
+      return;
+    }
+    _audioWeekKey = storedWeek;
+    _weeklyListeningSeconds =
+        (box.get(_audioWeekSecondsStorage, defaultValue: 0) as int?) ?? 0;
+    _weeklyListeningVerses =
+        (box.get(_audioWeekVersesStorage, defaultValue: 0) as int?) ?? 0;
+  }
+
+  Future<void> _trackListeningDelta({required Duration delta}) async {
+    if (_audioPlayerState != PlayerState.playing) return;
+    final deltaSeconds = delta.inSeconds;
+    if (deltaSeconds <= 0) return;
+    final box = Hive.box('settings');
+    if (_audioWeekKey != _currentWeekKey()) {
+      _loadWeeklyAudioStats();
+    }
+    _weeklyListeningSeconds += deltaSeconds;
+    await box.put(_audioWeekSecondsStorage, _weeklyListeningSeconds);
+  }
+
+  Future<void> _recordVersePlayback(_PageVerse verse) async {
+    final key = '${verse.surahNumber}:${verse.verseNumber}';
+    if (_countedVerseKeys.contains(key)) return;
+    _countedVerseKeys.add(key);
+    final box = Hive.box('settings');
+    if (_audioWeekKey != _currentWeekKey()) {
+      _loadWeeklyAudioStats();
+    }
+    _weeklyListeningVerses += 1;
+    await box.put(_audioWeekVersesStorage, _weeklyListeningVerses);
+  }
+
+  Future<void> _resumeLastReadingPosition() async {
+    final box = Hive.box('settings');
+    final surah = (box.get('last_read_surah', defaultValue: 1) as int?) ?? 1;
+    final verse = (box.get('last_read_verse', defaultValue: 1) as int?) ?? 1;
+    final page = quran.getPageNumber(surah, verse);
+    if (!mounted) return;
+    setState(() {
+      _currentSurahNumber = surah;
+      _currentVisibleVerse = verse;
+      _currentVisiblePage = page;
+    });
+    if (_pageController.hasClients) {
+      await _pageController.animateToPage(
+        (page - 1).clamp(0, 603),
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   Future<void> _setFontSize(double newSize) async {
@@ -637,6 +775,8 @@ $verseText
   @override
   void dispose() {
     _focusTimer?.cancel();
+    unawaited(_audioPlayer.stop());
+    _audioPlayer.dispose();
     _pageController.dispose();
     _fabAnimationController.dispose();
     super.dispose();
@@ -655,8 +795,16 @@ $verseText
     final quranHeaderColor = isDark
         ? const Color(0xFF16213E)
         : const Color(0xFF1B4332); // Dark green header (traditional Quran)
+    final media = MediaQuery.of(context);
+    final hasVerticalFold = media.displayFeatures.any((feature) {
+      final featureType = feature.type.toString().toLowerCase();
+      final isFoldLike =
+          featureType.contains('hinge') || featureType.contains('fold');
+      return isFoldLike && feature.bounds.height >= media.size.height * 0.5;
+    });
+    final applyFoldStretch = hasVerticalFold && _foldStretchPage;
     final isReaderCollapsed = !_isTopOptionsExpanded;
-    final pageBottomInset = isReaderCollapsed ? 60.0 : 78.0;
+    final pageBottomInset = isReaderCollapsed ? 124.0 : 142.0;
 
     return Scaffold(
       backgroundColor: quranPaperColor,
@@ -818,9 +966,9 @@ $verseText
                       Expanded(
                         child: Padding(
                           padding: EdgeInsets.fromLTRB(
-                            isReaderCollapsed ? 8 : 12,
+                            applyFoldStretch ? 2 : (isReaderCollapsed ? 8 : 12),
                             isReaderCollapsed ? 0 : 6,
-                            isReaderCollapsed ? 8 : 12,
+                            applyFoldStretch ? 2 : (isReaderCollapsed ? 8 : 12),
                             pageBottomInset,
                           ),
                           child: PageView.builder(
@@ -839,6 +987,7 @@ $verseText
                                   pageNumber: pageNumber,
                                   isDark: isDark,
                                   isCompact: isReaderCollapsed,
+                                  stretchInFold: applyFoldStretch,
                                 );
                               }
                               return _buildMushafPage(
@@ -847,6 +996,7 @@ $verseText
                                 pageNumber: pageNumber,
                                 isDark: isDark,
                                 isCompact: isReaderCollapsed,
+                                stretchInFold: applyFoldStretch,
                               );
                             },
                           ),
@@ -860,6 +1010,12 @@ $verseText
           ),
 
           // Bottom Navigation
+          Positioned(
+            left: 10,
+            right: 10,
+            bottom: isReaderCollapsed ? 64 : 82,
+            child: _buildRecitationBar(theme),
+          ),
           Positioned(
             left: 0,
             right: 0,
@@ -1160,6 +1316,14 @@ $verseText
                   },
                 ),
                 ListTile(
+                  leading: const Icon(Icons.play_circle_fill_rounded),
+                  title: const Text('تشغيل التلاوة من هذه الآية'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _playVerseAudio(verse);
+                  },
+                ),
+                ListTile(
                   leading: const Icon(Icons.copy_rounded),
                   title: const Text('نسخ الآية'),
                   onTap: () {
@@ -1190,6 +1354,208 @@ $verseText
     await box.put('fold_live_verse', verse.verseNumber);
     await box.put('fold_live_text', verse.text);
     await box.put('fold_live_updated_at', DateTime.now().toIso8601String());
+  }
+
+  String _buildVerseAudioUrl({
+    required int surahNumber,
+    required int verseNumber,
+  }) {
+    final surah = surahNumber.toString().padLeft(3, '0');
+    final verse = verseNumber.toString().padLeft(3, '0');
+    return 'https://everyayah.com/data/$_selectedReciter/$surah$verse.mp3';
+  }
+
+  bool _isPlayingVerse(_PageVerse verse) {
+    return _playingSurahNumber == verse.surahNumber &&
+        _playingVerseNumber == verse.verseNumber;
+  }
+
+  Future<void> _playVerseAudio(_PageVerse verse) async {
+    final url = _buildVerseAudioUrl(
+      surahNumber: verse.surahNumber,
+      verseNumber: verse.verseNumber,
+    );
+    try {
+      setState(() {
+        _playingSurahNumber = verse.surahNumber;
+        _playingVerseNumber = verse.verseNumber;
+        _audioPosition = Duration.zero;
+        _audioDuration = Duration.zero;
+      });
+      await _audioPlayer.stop();
+      await _audioPlayer.play(UrlSource(url));
+      await _recordVersePlayback(verse);
+      unawaited(_publishFoldLiveVerse(verse));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('تعذر تشغيل التلاوة الآن، حاول مرة أخرى'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _toggleCurrentRecitation() async {
+    if (_audioPlayerState == PlayerState.playing) {
+      await _audioPlayer.pause();
+      return;
+    }
+    if (_audioPlayerState == PlayerState.paused) {
+      await _audioPlayer.resume();
+      return;
+    }
+
+    final verses = _getVersesForPage(_currentVisiblePage);
+    if (verses.isEmpty) return;
+    final verse = verses.firstWhere(
+      (v) =>
+          v.surahNumber == _currentSurahNumber &&
+          v.verseNumber == _currentVisibleVerse,
+      orElse: () => verses.first,
+    );
+    await _playVerseAudio(verse);
+  }
+
+  (_PageVerse? current, _PageVerse? previous) _currentAndPreviousVerse() {
+    final currentSurah = _playingSurahNumber ?? _currentSurahNumber;
+    final currentVerse = _playingVerseNumber ?? _currentVisibleVerse;
+
+    if (currentVerse > 1) {
+      final previous = _PageVerse(
+        surahNumber: currentSurah,
+        verseNumber: currentVerse - 1,
+        text: _normalizeQuranTextForDisplay(
+          quran.getVerse(currentSurah, currentVerse - 1),
+        ),
+      );
+      final current = _PageVerse(
+        surahNumber: currentSurah,
+        verseNumber: currentVerse,
+        text: _normalizeQuranTextForDisplay(
+          quran.getVerse(currentSurah, currentVerse),
+        ),
+      );
+      return (current, previous);
+    }
+
+    if (currentSurah <= 1) {
+      final current = _PageVerse(
+        surahNumber: 1,
+        verseNumber: 1,
+        text: _normalizeQuranTextForDisplay(quran.getVerse(1, 1)),
+      );
+      return (current, null);
+    }
+
+    final previousSurah = currentSurah - 1;
+    final previousVerseNumber = quran.getVerseCount(previousSurah);
+    final previous = _PageVerse(
+      surahNumber: previousSurah,
+      verseNumber: previousVerseNumber,
+      text: _normalizeQuranTextForDisplay(
+        quran.getVerse(previousSurah, previousVerseNumber),
+      ),
+    );
+    final current = _PageVerse(
+      surahNumber: currentSurah,
+      verseNumber: currentVerse,
+      text: _normalizeQuranTextForDisplay(
+        quran.getVerse(currentSurah, currentVerse),
+      ),
+    );
+    return (current, previous);
+  }
+
+  _PageVerse? _nextVerse(_PageVerse current) {
+    final maxVerse = quran.getVerseCount(current.surahNumber);
+    if (current.verseNumber < maxVerse) {
+      final nextVerseNumber = current.verseNumber + 1;
+      return _PageVerse(
+        surahNumber: current.surahNumber,
+        verseNumber: nextVerseNumber,
+        text: _normalizeQuranTextForDisplay(
+          quran.getVerse(current.surahNumber, nextVerseNumber),
+        ),
+      );
+    }
+    if (current.surahNumber >= 114) return null;
+    return _PageVerse(
+      surahNumber: current.surahNumber + 1,
+      verseNumber: 1,
+      text: _normalizeQuranTextForDisplay(
+        quran.getVerse(current.surahNumber + 1, 1),
+      ),
+    );
+  }
+
+  Future<void> _playNextVerse() async {
+    final current = _PageVerse(
+      surahNumber: _playingSurahNumber ?? _currentSurahNumber,
+      verseNumber: _playingVerseNumber ?? _currentVisibleVerse,
+      text: '',
+    );
+    final next = _nextVerse(current);
+    if (next == null) return;
+    if (_autoFollowAudio) {
+      final targetPage = quran.getPageNumber(
+        next.surahNumber,
+        next.verseNumber,
+      );
+      if (_currentVisiblePage != targetPage) {
+        await _jumpToPage(targetPage);
+      }
+      if (mounted) {
+        setState(() {
+          _currentSurahNumber = next.surahNumber;
+          _currentVisibleVerse = next.verseNumber;
+        });
+      }
+    }
+    await _playVerseAudio(next);
+  }
+
+  Future<void> _playPreviousVerse() async {
+    final (current, previous) = _currentAndPreviousVerse();
+    if (current == null || previous == null) return;
+    if (_autoFollowAudio) {
+      final targetPage = quran.getPageNumber(
+        previous.surahNumber,
+        previous.verseNumber,
+      );
+      if (_currentVisiblePage != targetPage) {
+        await _jumpToPage(targetPage);
+      }
+      if (mounted) {
+        setState(() {
+          _currentSurahNumber = previous.surahNumber;
+          _currentVisibleVerse = previous.verseNumber;
+        });
+      }
+    }
+    await _playVerseAudio(previous);
+  }
+
+  Future<void> _handleAudioComplete() async {
+    final currentSurah = _playingSurahNumber;
+    final currentVerse = _playingVerseNumber;
+    if (currentSurah == null || currentVerse == null) return;
+    final next = _nextVerse(
+      _PageVerse(
+        surahNumber: currentSurah,
+        verseNumber: currentVerse,
+        text: '',
+      ),
+    );
+    if (next == null) {
+      if (!mounted) return;
+      setState(() {
+        _audioPosition = Duration.zero;
+      });
+      return;
+    }
+    await _playNextVerse();
   }
 
   Future<void> _showTafsirSheet(_PageVerse verse, ThemeData theme) async {
@@ -1408,6 +1774,7 @@ $verseText
     required int pageNumber,
     required bool isDark,
     bool isCompact = false,
+    bool stretchInFold = false,
   }) {
     final verses = _getVersesForPage(pageNumber);
     if (verses.isEmpty) return const SizedBox.shrink();
@@ -1424,9 +1791,9 @@ $verseText
     return Container(
       margin: EdgeInsets.only(bottom: isCompact ? 2 : 8),
       padding: EdgeInsets.fromLTRB(
-        isCompact ? 12 : 16,
+        stretchInFold ? 8 : (isCompact ? 12 : 16),
         isCompact ? 10 : 16,
-        isCompact ? 12 : 16,
+        stretchInFold ? 8 : (isCompact ? 12 : 16),
         isCompact ? 8 : 10,
       ),
       decoration: BoxDecoration(
@@ -1524,6 +1891,7 @@ $verseText
     required int pageNumber,
     required bool isDark,
     bool isCompact = false,
+    bool stretchInFold = false,
   }) {
     final verses = _getVersesForPage(pageNumber);
     if (verses.isEmpty) {
@@ -1549,10 +1917,20 @@ $verseText
     final verseSpans = <InlineSpan>[];
     for (var i = 0; i < verses.length; i++) {
       final verse = verses[i];
+      final isPlaying = _isPlayingVerse(verse);
+      final style = isPlaying
+          ? verseStyle.copyWith(
+              color: theme.colorScheme.secondary,
+              backgroundColor: theme.colorScheme.secondary.withValues(
+                alpha: 0.14,
+              ),
+              fontWeight: FontWeight.w700,
+            )
+          : verseStyle;
       verseSpans.add(
         TextSpan(
           text: '${verse.text}  ﴿${verse.verseNumber}﴾',
-          style: verseStyle,
+          style: style,
           recognizer: TapGestureRecognizer()
             ..onTap = () => _showVerseActionsSheet(verse, theme),
         ),
@@ -1565,9 +1943,9 @@ $verseText
     return Container(
       margin: EdgeInsets.only(bottom: isCompact ? 2 : 8),
       padding: EdgeInsets.fromLTRB(
-        isCompact ? 12 : 18,
+        stretchInFold ? 8 : (isCompact ? 12 : 18),
         isCompact ? 10 : 16,
-        isCompact ? 12 : 18,
+        stretchInFold ? 8 : (isCompact ? 12 : 18),
         isCompact ? 8 : 10,
       ),
       decoration: BoxDecoration(
@@ -1787,6 +2165,12 @@ $verseText
                   label: 'تركيز',
                   onTap: () => _showFocusModeSheet(theme),
                 ),
+                _buildTopOptionAction(
+                  theme: theme,
+                  icon: Icons.restore_page_rounded,
+                  label: 'استئناف',
+                  onTap: _resumeLastReadingPosition,
+                ),
               ],
             ),
           ],
@@ -1828,6 +2212,85 @@ $verseText
               icon: Icons.unfold_more_rounded,
               label: 'تمدد',
               onTap: () => _setTopOptionsExpanded(true),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecitationBar(ThemeData theme) {
+    final isPlaying = _audioPlayerState == PlayerState.playing;
+    final hasSelection =
+        _playingSurahNumber != null && _playingVerseNumber != null;
+    final label = hasSelection
+        ? '${quran.getSurahNameArabic(_playingSurahNumber!)} - آية $_playingVerseNumber'
+        : 'ابدأ التلاوة من أي آية';
+    final maxMs = _audioDuration.inMilliseconds <= 0
+        ? 1
+        : _audioDuration.inMilliseconds;
+    final progress = (_audioPosition.inMilliseconds / maxMs)
+        .clamp(0.0, 1.0)
+        .toDouble();
+
+    return Material(
+      color: theme.cardColor.withValues(alpha: 0.95),
+      borderRadius: BorderRadius.circular(14),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: theme.colorScheme.secondary,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _playPreviousVerse,
+                  icon: const Icon(Icons.skip_previous_rounded),
+                  tooltip: 'الآية السابقة',
+                ),
+                IconButton(
+                  onPressed: _toggleCurrentRecitation,
+                  icon: Icon(
+                    isPlaying
+                        ? Icons.pause_circle_filled
+                        : Icons.play_circle_fill,
+                  ),
+                  tooltip: isPlaying ? 'إيقاف مؤقت' : 'تشغيل',
+                ),
+                IconButton(
+                  onPressed: _playNextVerse,
+                  icon: const Icon(Icons.skip_next_rounded),
+                  tooltip: 'الآية التالية',
+                ),
+              ],
+            ),
+            LinearProgressIndicator(
+              value: hasSelection ? progress : 0,
+              minHeight: 3,
+              backgroundColor: theme.dividerColor.withValues(alpha: 0.3),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                theme.colorScheme.secondary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'هذا الأسبوع: ${(_weeklyListeningSeconds / 60).floor()} دقيقة • $_weeklyListeningVerses آية',
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
         ),
@@ -2099,6 +2562,70 @@ $verseText
                     activeThumbColor: theme.colorScheme.secondary,
                     onChanged: (value) {
                       setSheetState(() => _showTranslation = value);
+                      setState(() {});
+                      _saveReaderPreferences();
+                    },
+                  ),
+                  SwitchListTile(
+                    title: const Text('تمدد الصفحة في وضع الفولد'),
+                    subtitle: const Text(
+                      'تقليل الهوامش لعرض أوسع على أجهزة الفولد',
+                    ),
+                    value: _foldStretchPage,
+                    activeThumbColor: theme.colorScheme.secondary,
+                    onChanged: (value) {
+                      setSheetState(() => _foldStretchPage = value);
+                      setState(() {});
+                      _saveReaderPreferences();
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'القارئ',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    initialValue: _selectedReciter,
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'Alafasy_128kbps',
+                        child: Text('العفاسي'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Abdurrahmaan_As-Sudais_192kbps',
+                        child: Text('السديس'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'Maher_AlMuaiqly_64kbps',
+                        child: Text('ماهر المعيقلي'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setSheetState(() => _selectedReciter = value);
+                      setState(() {});
+                      _saveReaderPreferences();
+                    },
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                    ),
+                  ),
+                  SwitchListTile(
+                    title: const Text('تتبع الصوت مع القراءة'),
+                    subtitle: const Text(
+                      'الانتقال تلقائيًا للآية/الصفحة التالية مع التلاوة',
+                    ),
+                    value: _autoFollowAudio,
+                    activeThumbColor: theme.colorScheme.secondary,
+                    onChanged: (value) {
+                      setSheetState(() => _autoFollowAudio = value);
                       setState(() {});
                       _saveReaderPreferences();
                     },

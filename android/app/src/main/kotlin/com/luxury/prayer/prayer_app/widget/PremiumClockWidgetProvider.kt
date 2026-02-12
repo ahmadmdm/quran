@@ -2,163 +2,119 @@ package com.luxury.prayer.prayer_app.widget
 
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.app.PendingIntent
 import android.widget.RemoteViews
 import com.luxury.prayer.prayer_app.R
-import com.luxury.prayer.prayer_app.MainActivity
 import es.antonborri.home_widget.HomeWidgetPlugin
-import android.graphics.Color
-import java.util.concurrent.TimeUnit
 
 class PremiumClockWidgetProvider : AppWidgetProvider() {
-    
+
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
         WidgetUpdateReceiver.scheduleUpdates(context)
     }
-    
+
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
         WidgetUpdateReceiver.checkAndCancelUpdates(context)
     }
-    
+
+    override fun onReceive(context: Context, intent: Intent?) {
+        super.onReceive(context, intent)
+        if (WidgetEngine.isToggleAction(intent)) {
+            val id = intent?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+                ?: AppWidgetManager.INVALID_APPWIDGET_ID
+            if (id != AppWidgetManager.INVALID_APPWIDGET_ID) {
+                WidgetEngine.toggleDisplayMode(context, "premium_mode_$id")
+                val manager = AppWidgetManager.getInstance(context)
+                onUpdate(context, manager, intArrayOf(id))
+            }
+        }
+    }
+
     override fun onUpdate(
         context: Context,
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
+        val widgetData = HomeWidgetPlugin.getData(context)
         for (appWidgetId in appWidgetIds) {
-            val widgetData = HomeWidgetPlugin.getData(context)
             val views = RemoteViews(context.packageName, R.layout.widget_premium_clock)
-            
+            val theme = WidgetEngine.resolveTheme(widgetData, "premium_clock")
+            val sizeClass = WidgetEngine.resolveSizeClass(appWidgetManager, appWidgetId)
+            val mode = WidgetEngine.getDisplayMode(context, "premium_mode_$appWidgetId")
+
             val prayerName = widgetData.getString("next_prayer_name", "--")
             val prayerTime = widgetData.getString("next_prayer_time", "--:--")
-            val timeRemaining = calculateTimeRemaining(widgetData)
-            
-            // Customization
-            val bgHex = getSetting(widgetData, "premium_clock_background_color", "premium clock_background_color", "#FF0F1629")
-            val textHex = getSetting(widgetData, "premium_clock_text_color", "premium clock_text_color", "#FFFFFFFF")
-            val accentHex = getSetting(widgetData, "premium_clock_accent_color", "premium clock_accent_color", "#FFC9A24D")
+            val countdown = WidgetEngine.computeTimeRemaining(widgetData, shortFormat = true)
+            val displayPrimary = if (mode == "time") prayerTime else countdown
+            val displaySecondary = if (mode == "time") countdown else prayerTime
 
-            val bgColor = try {
-                Color.parseColor(bgHex)
-            } catch (e: Exception) {
-                Color.parseColor("#FF0F1629")
-            }
-
-            val textColor = try {
-                Color.parseColor(textHex)
-            } catch (e: Exception) {
-                Color.WHITE
-            }
-            
-            val accentColor = try {
-                Color.parseColor(accentHex)
-            } catch (e: Exception) {
-                Color.parseColor("#FFC9A24D")
-            }
-
-            // Apply Background
-            views.setInt(R.id.iv_background, "setColorFilter", bgColor)
-            
-            // Apply Text Colors
-            views.setTextColor(R.id.tv_clock_time, accentColor)
-            views.setTextColor(R.id.tv_clock_seconds, Color.argb(136, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)))
-            views.setTextColor(R.id.tv_next_prayer_name, textColor)
-            views.setTextColor(R.id.tv_time_remaining, Color.argb(153, Color.red(textColor), Color.green(textColor), Color.blue(textColor)))
-            views.setTextColor(R.id.tv_prayer_time, Color.argb(102, Color.red(textColor), Color.green(textColor), Color.blue(textColor)))
-            
-            // Set text values
+            views.setInt(R.id.iv_background, "setColorFilter", theme.background)
             views.setTextViewText(R.id.tv_next_prayer_name, prayerName)
-            views.setTextViewText(R.id.tv_time_remaining, timeRemaining)
-            views.setTextViewText(R.id.tv_prayer_time, prayerTime)
-            
-            // Calculate progress for the ring (time until next prayer)
-            // For now, we'll use a static progress. In a real implementation,
-            // you'd calculate based on time between prayers
+            views.setTextViewText(R.id.tv_time_remaining, displayPrimary)
+            views.setTextViewText(R.id.tv_prayer_time, displaySecondary)
+
+            views.setTextColor(R.id.tv_clock_time, theme.accent)
+            views.setTextColor(R.id.tv_clock_seconds, WidgetEngine.applyAlpha(theme.accent, 136))
+            views.setTextColor(R.id.tv_next_prayer_name, theme.text)
+            views.setTextColor(R.id.tv_time_remaining, WidgetEngine.applyAlpha(theme.text, 190))
+            views.setTextColor(R.id.tv_prayer_time, WidgetEngine.applyAlpha(theme.text, 140))
+
             val now = System.currentTimeMillis()
-            var nextPrayerMillis = 0L
-            var prevPrayerMillis = 0L
-            
-            for (i in 0..4) {
-                val millis = widgetData.getLong("prayer_time_millis_$i", 0)
-                if (millis > now && nextPrayerMillis == 0L) {
-                    nextPrayerMillis = millis
-                    if (i > 0) {
-                        prevPrayerMillis = widgetData.getLong("prayer_time_millis_${i-1}", 0)
-                    }
+            val nextIndex = WidgetEngine.computeNextPrayerIndex(widgetData, now)
+            var nextMillis = 0L
+            var prevMillis = 0L
+            if (nextIndex >= 0) {
+                nextMillis = widgetData.getLong("prayer_time_millis_$nextIndex", 0L)
+                if (nextIndex > 0) {
+                    prevMillis = widgetData.getLong("prayer_time_millis_${nextIndex - 1}", 0L)
                 }
             }
-            
-            if (nextPrayerMillis > 0 && prevPrayerMillis > 0) {
-                val totalDuration = nextPrayerMillis - prevPrayerMillis
-                val elapsed = now - prevPrayerMillis
-                val progress = ((elapsed.toFloat() / totalDuration.toFloat()) * 100).toInt().coerceIn(0, 100)
+            if (nextMillis > 0 && prevMillis > 0 && nextMillis > prevMillis) {
+                val progress = (((now - prevMillis).toFloat() / (nextMillis - prevMillis).toFloat()) * 100f)
+                    .toInt().coerceIn(0, 100)
                 views.setProgressBar(R.id.progress_ring, 100, progress, false)
             } else {
                 views.setProgressBar(R.id.progress_ring, 100, 50, false)
             }
-            
-            // Interaction: Open App on Click
-            val intent = Intent(context, MainActivity::class.java)
-            val pendingIntent = PendingIntent.getActivity(
-                context,
-                appWidgetId,
-                intent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            views.setOnClickPendingIntent(R.id.widget_clock_root, pendingIntent)
 
-            try {
-                appWidgetManager.updateAppWidget(appWidgetId, views)
-            } catch (e: Exception) {
-                android.util.Log.e("PremiumClockWidget", "Error updating widget: ${e.message}")
-            }
-        }
-        
-        // Ensure updates are scheduled
-        WidgetUpdateReceiver.scheduleUpdates(context)
-    }
-    
-    private fun calculateTimeRemaining(widgetData: android.content.SharedPreferences): String {
-        val currentTime = System.currentTimeMillis()
-        var nextPrayerTime = widgetData.getLong("next_prayer_millis", 0L)
-        
-        if (nextPrayerTime <= currentTime) {
-            nextPrayerTime = Long.MAX_VALUE
-            for (i in 0..5) {
-                val prayerTimeMillis = widgetData.getLong("prayer_time_millis_$i", 0L)
-                if (prayerTimeMillis > currentTime && prayerTimeMillis < nextPrayerTime) {
-                    nextPrayerTime = prayerTimeMillis
+            when (sizeClass) {
+                WidgetSizeClass.COMPACT -> {
+                    WidgetEngine.setTextSize(views, R.id.tv_clock_time, 28f)
+                    WidgetEngine.setTextSize(views, R.id.tv_next_prayer_name, 13f)
+                    WidgetEngine.setTextSize(views, R.id.tv_time_remaining, 11f)
+                }
+                WidgetSizeClass.MEDIUM -> {
+                    WidgetEngine.setTextSize(views, R.id.tv_clock_time, 34f)
+                    WidgetEngine.setTextSize(views, R.id.tv_next_prayer_name, 16f)
+                    WidgetEngine.setTextSize(views, R.id.tv_time_remaining, 13f)
+                }
+                WidgetSizeClass.EXPANDED -> {
+                    WidgetEngine.setTextSize(views, R.id.tv_clock_time, 40f)
+                    WidgetEngine.setTextSize(views, R.id.tv_next_prayer_name, 18f)
+                    WidgetEngine.setTextSize(views, R.id.tv_time_remaining, 15f)
                 }
             }
-        }
-        
-        return if (nextPrayerTime != Long.MAX_VALUE && nextPrayerTime > currentTime) {
-            val remainingMillis = nextPrayerTime - currentTime
-            val hours = TimeUnit.MILLISECONDS.toHours(remainingMillis)
-            val minutes = TimeUnit.MILLISECONDS.toMinutes(remainingMillis) % 60
-            
-            if (hours > 0) {
-                String.format("%d:%02d", hours, minutes)
-            } else {
-                String.format("%d دقيقة", minutes)
-            }
-        } else {
-            widgetData.getString("time_remaining", "--:--") ?: "--:--"
-        }
-    }
 
-    private fun getSetting(
-        prefs: android.content.SharedPreferences,
-        key: String,
-        legacyKey: String,
-        defaultValue: String
-    ): String {
-        return prefs.getString(key, null)
-            ?: prefs.getString(legacyKey, null)
-            ?: defaultValue
+            views.setOnClickPendingIntent(
+                R.id.widget_clock_root,
+                WidgetEngine.openAppIntent(context, appWidgetId + 3000)
+            )
+            views.setOnClickPendingIntent(
+                R.id.tv_time_remaining,
+                WidgetEngine.createToggleIntent(context, PremiumClockWidgetProvider::class.java, appWidgetId)
+            )
+            appWidgetManager.updateAppWidget(appWidgetId, views)
+        }
+
+        val hasActive = appWidgetManager.getAppWidgetIds(
+            ComponentName(context, PremiumClockWidgetProvider::class.java)
+        ).isNotEmpty()
+        if (hasActive) {
+            WidgetUpdateReceiver.scheduleUpdates(context)
+        }
     }
 }

@@ -126,7 +126,8 @@ class CalligraphyWidgetProvider : AppWidgetProvider() {
         )
         
         // Format: 20 Sha'ban, 1447
-        val formattedDate = "${toArabicDigits(hijriDate.day)} ${HIJRI_MONTHS[hijriDate.month - 1]}، ${toArabicDigits(hijriDate.year)}"
+        val monthIndex = (hijriDate.month - 1).coerceIn(0, 11)
+        val formattedDate = "${toArabicDigits(hijriDate.day)} ${HIJRI_MONTHS[monthIndex]}، ${toArabicDigits(hijriDate.year)}"
         views.setTextViewText(R.id.tv_full_date, formattedDate)
 
         // Click Intent

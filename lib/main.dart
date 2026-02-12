@@ -106,9 +106,7 @@ class PrayerApp extends ConsumerWidget {
         }
 
         Widget resolvedChild = child ?? const SizedBox.shrink();
-        if (verticalHinge != null &&
-            (foldPaneMode == FoldPaneMode.span ||
-                foldPaneMode == FoldPaneMode.auto)) {
+        if (verticalHinge != null && foldPaneMode == FoldPaneMode.span) {
           final hinge = verticalHinge.bounds as Rect;
           final leftPaneWidth = hinge.left;
           final rightPaneWidth = media.size.width - hinge.right;
@@ -129,14 +127,9 @@ class PrayerApp extends ConsumerWidget {
               if (contentOnRight) contentPane else companionPane,
             ],
           );
-        } else if (verticalHinge != null && foldPaneMode != FoldPaneMode.span) {
+        } else if (verticalHinge != null) {
           final hinge = verticalHinge.bounds;
-          final useRightPane = switch (foldPaneMode) {
-            FoldPaneMode.left => false,
-            FoldPaneMode.right => true,
-            FoldPaneMode.auto ||
-            FoldPaneMode.span => textDirection == ui.TextDirection.rtl,
-          };
+          final useRightPane = textDirection == ui.TextDirection.rtl;
           final leftPaneWidth = hinge.left;
           final rightPaneWidth = media.size.width - hinge.right;
           final paneWidth = useRightPane ? rightPaneWidth : leftPaneWidth;

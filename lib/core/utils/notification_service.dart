@@ -19,6 +19,12 @@ class NotificationService {
   bool _isInitialized = false;
   Future<void>? _initializing;
   int _androidSdkVersion = 0;
+  int _lastScheduledCount = 0;
+  int _lastFailedScheduleCount = 0;
+  DateTime? _lastScheduleRunAt;
+  String _lastTimezoneName = 'unknown';
+  bool _cacheRepairAttemptedInCurrentRun = false;
+  final List<String> _recentScheduleErrors = [];
 
   Future<void> init() async {
     if (_isInitialized) return;
@@ -267,11 +273,23 @@ class NotificationService {
     String notificationSound = 'system',
     bool vibrationEnabled = true,
     Set<Prayer>? enabledPrayers,
+    bool multiLevelRemindersEnabled = false,
+    int suppressImmediateRemindersWindowMinutes = 0,
   }) async {
     await init();
+    // Proactive cache scrub to avoid OEM/plugin corrupted schedule payloads
+    // before any cancel/schedule call hits the plugin.
+    if (Platform.isAndroid) {
+      await _clearCorruptedNotificationCache();
+    }
+    _lastScheduleRunAt = DateTime.now();
+    _lastScheduledCount = 0;
+    _lastFailedScheduleCount = 0;
+    _cacheRepairAttemptedInCurrentRun = false;
 
-    // Cancel all existing notifications first
-    await cancelAll();
+    // Cancel existing notifications safely. Some OEM devices can throw
+    // "Missing type parameter" while the plugin loads cached schedules.
+    await _safeCancelAll();
 
     if (!notificationsEnabled) {
       debugPrint('Notifications disabled, skipping scheduling');
@@ -293,10 +311,24 @@ class NotificationService {
     }
 
     // Schedule for the next 7 days
-    int notificationId = 0;
+    int nextNotificationId = 0;
+    int scheduledCount = 0;
     final now = DateTime.now();
     DateTime? nextEnabledPrayerTime;
     String? nextEnabledPrayerName;
+
+    final reminderOffsets = <int>{};
+    if (prePrayerRemindersEnabled && preAzanReminderOffset > 0) {
+      reminderOffsets.add(preAzanReminderOffset);
+    }
+    if (prePrayerRemindersEnabled && multiLevelRemindersEnabled) {
+      reminderOffsets.addAll(const {15, 10, 5});
+    }
+    final sortedReminderOffsets = reminderOffsets
+      ..removeWhere((value) => value <= 0);
+    final suppressUntil = now.add(
+      Duration(minutes: suppressImmediateRemindersWindowMinutes),
+    );
 
     for (int day = 0; day < 7; day++) {
       final date = now.add(Duration(days: day));
@@ -336,8 +368,8 @@ class NotificationService {
         }
 
         if (prayerTimeNotificationsEnabled) {
-          await _scheduleNotification(
-            id: notificationId++,
+          final scheduled = await _scheduleNotificationWithFallback(
+            id: nextNotificationId++,
             title: 'حان وقت صلاة $prayerNameAr',
             body: 'حان الآن موعد صلاة $prayerNameAr - $prayerNameEn',
             scheduledTime: prayerTime,
@@ -346,31 +378,39 @@ class NotificationService {
             vibrate: vibrationEnabled,
             payload: 'prayer_$prayerNameEn',
           );
+          if (scheduled) {
+            scheduledCount++;
+          } else {
+            _lastFailedScheduleCount++;
+          }
         }
 
-        // Schedule pre-Azan reminder
-        if (prePrayerRemindersEnabled && preAzanReminderOffset > 0) {
-          final reminderTime = prayerTime.subtract(
-            Duration(minutes: preAzanReminderOffset),
+        for (final offset in sortedReminderOffsets.toList()..sort()) {
+          final reminderTime = prayerTime.subtract(Duration(minutes: offset));
+          if (!reminderTime.isAfter(suppressUntil)) {
+            continue;
+          }
+          final scheduled = await _scheduleNotificationWithFallback(
+            id: nextNotificationId++,
+            title: 'تذكير: صلاة $prayerNameAr',
+            body: 'باقي $offset دقيقة على صلاة $prayerNameAr',
+            scheduledTime: reminderTime,
+            isAzan: false,
+            soundType: 'system',
+            vibrate: vibrationEnabled,
+            payload: 'reminder_${offset}m_$prayerNameEn',
           );
-
-          if (reminderTime.isAfter(now)) {
-            await _scheduleNotification(
-              id: notificationId++,
-              title: 'تذكير: صلاة $prayerNameAr',
-              body: 'باقي $preAzanReminderOffset دقيقة على صلاة $prayerNameAr',
-              scheduledTime: reminderTime,
-              isAzan: false,
-              soundType: 'system',
-              vibrate: vibrationEnabled,
-              payload: 'reminder_$prayerNameEn',
-            );
+          if (scheduled) {
+            scheduledCount++;
+          } else {
+            _lastFailedScheduleCount++;
           }
         }
       }
     }
 
-    if (notificationId == 0) {
+    _lastScheduledCount = scheduledCount;
+    if (scheduledCount == 0) {
       await _stopCountdownService();
       debugPrint('No upcoming enabled prayers found to schedule');
       return;
@@ -382,10 +422,12 @@ class NotificationService {
       targetTime: nextEnabledPrayerTime,
     );
 
-    debugPrint('Scheduled $notificationId notifications');
+    debugPrint(
+      'Scheduled $scheduledCount notifications (failed: $_lastFailedScheduleCount)',
+    );
   }
 
-  Future<void> _scheduleNotification({
+  Future<bool> _scheduleNotification({
     required int id,
     required String title,
     required String body,
@@ -527,9 +569,54 @@ class NotificationService {
       debugPrint(
         'Scheduled notification $id for $scheduledTime (mode: $scheduleMode)',
       );
+      return true;
     } catch (e) {
+      _rememberScheduleError('id=$id error=$e');
       debugPrint('Error scheduling notification: $e');
+      return false;
     }
+  }
+
+  Future<bool> _scheduleNotificationWithFallback({
+    required int id,
+    required String title,
+    required String body,
+    required DateTime scheduledTime,
+    required bool isAzan,
+    required String soundType,
+    required bool vibrate,
+    String? payload,
+  }) async {
+    final firstTry = await _scheduleNotification(
+      id: id,
+      title: title,
+      body: body,
+      scheduledTime: scheduledTime,
+      isAzan: isAzan,
+      soundType: soundType,
+      vibrate: vibrate,
+      payload: payload,
+    );
+    if (firstTry) return true;
+
+    if (!_cacheRepairAttemptedInCurrentRun && Platform.isAndroid) {
+      _cacheRepairAttemptedInCurrentRun = true;
+      final repaired = await _clearCorruptedNotificationCache();
+      if (repaired) {
+        debugPrint('Retry scheduling notification $id after cache repair');
+        return _scheduleNotification(
+          id: id,
+          title: title,
+          body: body,
+          scheduledTime: scheduledTime,
+          isAzan: isAzan,
+          soundType: soundType,
+          vibrate: vibrate,
+          payload: payload,
+        );
+      }
+    }
+    return false;
   }
 
   Future<void> _startCountdownService({
@@ -564,6 +651,7 @@ class NotificationService {
     required String body,
     String? payload,
   }) async {
+    await init();
     await flutterLocalNotificationsPlugin.show(
       DateTime.now().millisecondsSinceEpoch ~/ 1000,
       title,
@@ -586,6 +674,32 @@ class NotificationService {
       ),
       payload: payload,
     );
+  }
+
+  Future<DateTime> schedulePrayerTestNotification({
+    String prayerNameAr = 'الفجر',
+    String prayerNameEn = 'Fajr',
+    int delaySeconds = 60,
+    String soundType = 'system',
+    bool vibrationEnabled = true,
+  }) async {
+    await init();
+    _cacheRepairAttemptedInCurrentRun = false;
+    final scheduledTime = DateTime.now().add(Duration(seconds: delaySeconds));
+    final id = DateTime.now().millisecondsSinceEpoch.remainder(1000000000);
+
+    await _scheduleNotificationWithFallback(
+      id: id,
+      title: 'اختبار: حان وقت صلاة $prayerNameAr',
+      body: 'اختبار إشعار وقت الصلاة - $prayerNameEn',
+      scheduledTime: scheduledTime,
+      isAzan: true,
+      soundType: soundType,
+      vibrate: vibrationEnabled,
+      payload: 'test_prayer_$prayerNameEn',
+    );
+
+    return scheduledTime;
   }
 
   Future<void> showPersistentNotification(
@@ -617,19 +731,53 @@ class NotificationService {
     await _stopCountdownService();
   }
 
+  Future<void> _safeCancelAll() async {
+    try {
+      await cancelAll();
+      return;
+    } catch (e) {
+      _rememberScheduleError('cancel-all-failed-first: $e');
+    }
+
+    final repaired = await _clearCorruptedNotificationCache();
+    if (repaired) {
+      try {
+        await cancelAll();
+        return;
+      } catch (e) {
+        _rememberScheduleError('cancel-all-failed-after-repair: $e');
+      }
+    }
+
+    // Last-resort: stop countdown service so UI is not left stale.
+    // Scheduling continues and individual schedule calls have fallback/repair too.
+    await _stopCountdownService();
+  }
+
   Future<void> cancelNotification(int id) async {
     await flutterLocalNotificationsPlugin.cancel(id);
   }
 
   Future<List<PendingNotificationRequest>> getPendingNotifications() async {
     try {
-      return await flutterLocalNotificationsPlugin.pendingNotificationRequests();
+      return await flutterLocalNotificationsPlugin
+          .pendingNotificationRequests();
     } catch (e) {
       // Some OEM Android builds throw when querying scheduled requests.
       // Return an empty list so diagnostics can continue with partial data.
       debugPrint('Failed to read pending notifications: $e');
       return const [];
     }
+  }
+
+  Map<String, Object?> getSchedulingHealthSnapshot() {
+    return {
+      'lastRunAt': _lastScheduleRunAt?.toIso8601String(),
+      'lastScheduledCount': _lastScheduledCount,
+      'lastFailedScheduleCount': _lastFailedScheduleCount,
+      'lastTimezone': _lastTimezoneName,
+      'recentErrors': List<String>.from(_recentScheduleErrors),
+    };
   }
 
   // Get notification permission status
@@ -679,14 +827,17 @@ class NotificationService {
       tzdata.initializeTimeZones();
       final timezoneName = await FlutterTimezone.getLocalTimezone();
       tz.setLocalLocation(tz.getLocation(timezoneName));
+      _lastTimezoneName = timezoneName;
       debugPrint('Timezone initialized: $timezoneName');
     } catch (e) {
       try {
         final fallbackName = DateTime.now().timeZoneName;
         tz.setLocalLocation(tz.getLocation(fallbackName));
+        _lastTimezoneName = fallbackName;
         debugPrint('Timezone fallback initialized: $fallbackName');
       } catch (_) {
         tz.setLocalLocation(tz.UTC);
+        _lastTimezoneName = 'UTC';
         debugPrint('Timezone fallback initialized: UTC');
       }
     }
@@ -694,5 +845,23 @@ class NotificationService {
 
   String _resolvePreferredSound(String requestedSound) {
     return normalizeNotificationSound(requestedSound);
+  }
+
+  Future<bool> _clearCorruptedNotificationCache() async {
+    try {
+      await platform.invokeMethod('clearNotificationCache');
+      return true;
+    } catch (e) {
+      _rememberScheduleError('cache-repair-failed: $e');
+      debugPrint("Failed to clear notification cache: $e");
+      return false;
+    }
+  }
+
+  void _rememberScheduleError(String message) {
+    _recentScheduleErrors.add('[${DateTime.now().toIso8601String()}] $message');
+    if (_recentScheduleErrors.length > 12) {
+      _recentScheduleErrors.removeAt(0);
+    }
   }
 }

@@ -27,7 +27,7 @@ Future<Position> userLocation(UserLocationRef ref) async {
   }
 
   final service = LocationService();
-  return await service.determinePosition();
+  return await service.determinePosition(source: settings.locationSourceMode);
 }
 
 @riverpod

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:adhan/adhan.dart';
 import 'package:hijri/hijri_calendar.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'dart:async';
 import '../../core/theme/app_theme.dart';
 import '../../core/localization/app_localizations.dart';
@@ -32,19 +33,27 @@ class HomePage extends ConsumerStatefulWidget {
 }
 
 class _HomePageState extends ConsumerState<HomePage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   Timer? _timer;
   DateTime _currentTime = DateTime.now();
   late AnimationController _pulseController;
   bool _showAllFeatureCards = false;
+  bool _mosqueModeActive = false;
+  String? _mosqueModeBackupSound;
+  bool? _mosqueModeBackupVibration;
+  DateTime? _mosqueModeAnchorPrayerTime;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Initialize notifications (channels, permissions) on app start
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(notificationServiceProvider).init();
       WidgetService.initializeDefaultSettings();
+      unawaited(Hive.openBox('tasbih'));
+      unawaited(Hive.openBox('prayer_tracker'));
+      unawaited(_runNotificationGuardCheck());
     });
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       setState(() {
@@ -60,9 +69,18 @@ class _HomePageState extends ConsumerState<HomePage>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _pulseController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_runNotificationGuardCheck());
+      ref.invalidate(prayerTimesProvider);
+    }
   }
 
   @override
@@ -93,6 +111,8 @@ class _HomePageState extends ConsumerState<HomePage>
           notificationSound: settings.notificationSound,
           vibrationEnabled: settings.vibrationEnabled,
           enabledPrayers: enabledPrayers,
+          multiLevelRemindersEnabled: settings.multiLevelRemindersEnabled,
+          suppressImmediateRemindersWindowMinutes: 20,
         );
 
         // Update Widget Data
@@ -127,6 +147,14 @@ class _HomePageState extends ConsumerState<HomePage>
 
         final now = DateTime.now();
         final diff = widgetNextPrayerTime?.difference(now) ?? Duration.zero;
+        final contextMode = _computeWidgetContextMode(
+          now: now,
+          nextPrayerTime: widgetNextPrayerTime,
+          smartStackEnabled: settings.smartWidgetStackEnabled,
+        );
+        final contextMessage = _buildWidgetContextMessage(contextMode);
+        final dhikrProgress = _readDhikrProgress();
+        final prayerProgress = _readPrayerProgress(now);
 
         // Prepare data for widget
         final localizations = AppLocalizations.of(context)!;
@@ -211,6 +239,16 @@ class _HomePageState extends ConsumerState<HomePage>
           sunriseTime: use24h
               ? DateFormat('HH:mm').format(prayerTimes.sunrise)
               : DateFormat.jm().format(prayerTimes.sunrise),
+          smartStackEnabled: settings.smartWidgetStackEnabled,
+          widgetContextMode: contextMode,
+          widgetContextMessage: contextMessage,
+          dailyDhikrCount: dhikrProgress.$1,
+          dailyDhikrGoal: dhikrProgress.$2,
+          prayerCompletedToday: prayerProgress,
+        );
+
+        unawaited(
+          _handleAutoMosqueMode(prayerTimes: prayerTimes, settings: settings),
         );
       });
     });
@@ -629,27 +667,11 @@ class _HomePageState extends ConsumerState<HomePage>
                     .setNotificationsEnabled(nextValue);
                 final prayerTimes = ref.read(prayerTimesProvider).value;
                 if (prayerTimes != null) {
-                  final enabledPrayers = <Prayer>{
-                    if (settings.fajrNotificationsEnabled) Prayer.fajr,
-                    if (settings.dhuhrNotificationsEnabled) Prayer.dhuhr,
-                    if (settings.asrNotificationsEnabled) Prayer.asr,
-                    if (settings.maghribNotificationsEnabled) Prayer.maghrib,
-                    if (settings.ishaNotificationsEnabled) Prayer.isha,
-                  };
-                  await ref
-                      .read(notificationServiceProvider)
-                      .schedulePrayers(
-                        prayerTimes,
-                        notificationsEnabled: nextValue,
-                        prayerTimeNotificationsEnabled:
-                            settings.prayerTimeNotificationsEnabled,
-                        prePrayerRemindersEnabled:
-                            settings.prePrayerRemindersEnabled,
-                        preAzanReminderOffset: settings.preAzanReminderOffset,
-                        notificationSound: settings.notificationSound,
-                        vibrationEnabled: settings.vibrationEnabled,
-                        enabledPrayers: enabledPrayers,
-                      );
+                  await _scheduleNotificationsWithSettings(
+                    prayerTimes: prayerTimes,
+                    settings: ref.read(settingsProvider),
+                    suppressWindowMinutes: 20,
+                  );
                 }
               },
             ),
@@ -854,6 +876,164 @@ class _HomePageState extends ConsumerState<HomePage>
         ],
       ),
     );
+  }
+
+  String _computeWidgetContextMode({
+    required DateTime now,
+    required DateTime? nextPrayerTime,
+    required bool smartStackEnabled,
+  }) {
+    if (!smartStackEnabled) return 'next_prayer';
+    if (nextPrayerTime != null &&
+        nextPrayerTime.difference(now).inMinutes <= 20 &&
+        nextPrayerTime.isAfter(now)) {
+      return 'prayer_focus';
+    }
+    final hour = now.hour;
+    if (hour >= 5 && hour < 11) return 'morning_azkar';
+    if (hour >= 17 && hour < 23) return 'evening_azkar';
+    return 'next_prayer';
+  }
+
+  String _buildWidgetContextMessage(String mode) {
+    switch (mode) {
+      case 'morning_azkar':
+        return 'وقت أذكار الصباح';
+      case 'evening_azkar':
+        return 'وقت أذكار المساء';
+      case 'prayer_focus':
+        return 'تهيأ للصلاة القادمة';
+      default:
+        return 'تابع خطتك اليومية';
+    }
+  }
+
+  (int, int) _readDhikrProgress() {
+    if (!Hive.isBoxOpen('tasbih')) return (0, 100);
+    final box = Hive.box('tasbih');
+    final count = (box.get('count', defaultValue: 0) as int?) ?? 0;
+    return (count, 100);
+  }
+
+  int _readPrayerProgress(DateTime now) {
+    if (!Hive.isBoxOpen('prayer_tracker')) return 0;
+    final box = Hive.box('prayer_tracker');
+    final key = DateFormat('yyyy-MM-dd').format(now);
+    final dayData = box.get(key, defaultValue: <String, dynamic>{});
+    if (dayData is! Map) return 0;
+    var completed = 0;
+    for (final prayer in ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha']) {
+      if (dayData[prayer] == true) completed++;
+    }
+    return completed;
+  }
+
+  Future<void> _runNotificationGuardCheck() async {
+    // Disabled by user request: do not show any auto-repair banners/snackbars.
+    return;
+  }
+
+  Future<void> _handleAutoMosqueMode({
+    required PrayerTimes prayerTimes,
+    required SettingsState settings,
+  }) async {
+    if (!settings.autoMosqueModeEnabled) return;
+    final resolved = _resolveNextPrayer(prayerTimes, settings);
+    final nextPrayerTime = resolved.$2;
+    if (nextPrayerTime == null) return;
+
+    final now = DateTime.now();
+    final leadAt = nextPrayerTime.subtract(
+      Duration(minutes: settings.autoMosqueModeLeadMinutes),
+    );
+    final restoreAt = nextPrayerTime.add(
+      Duration(minutes: settings.autoMosqueModeRestoreMinutes),
+    );
+
+    if (!_mosqueModeActive &&
+        now.isAfter(leadAt) &&
+        now.isBefore(restoreAt) &&
+        (_mosqueModeAnchorPrayerTime == null ||
+            _mosqueModeAnchorPrayerTime != nextPrayerTime)) {
+      _mosqueModeActive = true;
+      _mosqueModeAnchorPrayerTime = nextPrayerTime;
+      _mosqueModeBackupSound = settings.notificationSound;
+      _mosqueModeBackupVibration = settings.vibrationEnabled;
+      await ref.read(settingsProvider.notifier).setNotificationSound('silent');
+      await ref.read(settingsProvider.notifier).setVibrationEnabled(false);
+      await _scheduleNotificationsWithSettings(
+        prayerTimes: prayerTimes,
+        settings: ref.read(settingsProvider),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم تفعيل وضع المسجد تلقائيًا'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (_mosqueModeActive &&
+        _mosqueModeAnchorPrayerTime != null &&
+        now.isAfter(
+          _mosqueModeAnchorPrayerTime!.add(
+            Duration(minutes: settings.autoMosqueModeRestoreMinutes),
+          ),
+        )) {
+      _mosqueModeActive = false;
+      _mosqueModeAnchorPrayerTime = null;
+      await ref
+          .read(settingsProvider.notifier)
+          .setNotificationSound(_mosqueModeBackupSound ?? 'system');
+      await ref
+          .read(settingsProvider.notifier)
+          .setVibrationEnabled(_mosqueModeBackupVibration ?? true);
+      final updatedSettings = ref.read(settingsProvider);
+      await _scheduleNotificationsWithSettings(
+        prayerTimes: prayerTimes,
+        settings: updatedSettings,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('تم إنهاء وضع المسجد والعودة للإعدادات الأصلية'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _scheduleNotificationsWithSettings({
+    required PrayerTimes prayerTimes,
+    required SettingsState settings,
+    int suppressWindowMinutes = 0,
+  }) async {
+    final enabledPrayers = <Prayer>{
+      if (settings.fajrNotificationsEnabled) Prayer.fajr,
+      if (settings.dhuhrNotificationsEnabled) Prayer.dhuhr,
+      if (settings.asrNotificationsEnabled) Prayer.asr,
+      if (settings.maghribNotificationsEnabled) Prayer.maghrib,
+      if (settings.ishaNotificationsEnabled) Prayer.isha,
+    };
+    await ref
+        .read(notificationServiceProvider)
+        .schedulePrayers(
+          prayerTimes,
+          notificationsEnabled: settings.areNotificationsEnabled,
+          prayerTimeNotificationsEnabled:
+              settings.prayerTimeNotificationsEnabled,
+          prePrayerRemindersEnabled: settings.prePrayerRemindersEnabled,
+          preAzanReminderOffset: settings.preAzanReminderOffset,
+          notificationSound: settings.notificationSound,
+          vibrationEnabled: settings.vibrationEnabled,
+          enabledPrayers: enabledPrayers,
+          multiLevelRemindersEnabled: settings.multiLevelRemindersEnabled,
+          suppressImmediateRemindersWindowMinutes: suppressWindowMinutes,
+        );
   }
 
   (Prayer, DateTime?) _resolveNextPrayer(

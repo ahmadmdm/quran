@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:adhan/adhan.dart';
+import '../../core/utils/location_service.dart';
 import '../../core/utils/notification_sound_support.dart';
 
-enum FoldPaneMode { auto, left, right, span }
+enum FoldPaneMode { auto, span }
 
 class SettingsState {
   final CalculationMethod calculationMethod;
@@ -29,6 +30,14 @@ class SettingsState {
   final double? manualLongitude;
   final String? manualLocationLabel;
   final FoldPaneMode foldPaneMode;
+  final LocationFetchSource locationSourceMode;
+  final bool quranFoldStretchPage;
+  final bool smartWidgetStackEnabled;
+  final bool proactiveNotificationGuardEnabled;
+  final bool multiLevelRemindersEnabled;
+  final bool autoMosqueModeEnabled;
+  final int autoMosqueModeLeadMinutes;
+  final int autoMosqueModeRestoreMinutes;
 
   SettingsState({
     required this.calculationMethod,
@@ -53,6 +62,14 @@ class SettingsState {
     required this.manualLongitude,
     required this.manualLocationLabel,
     required this.foldPaneMode,
+    required this.locationSourceMode,
+    required this.quranFoldStretchPage,
+    required this.smartWidgetStackEnabled,
+    required this.proactiveNotificationGuardEnabled,
+    required this.multiLevelRemindersEnabled,
+    required this.autoMosqueModeEnabled,
+    required this.autoMosqueModeLeadMinutes,
+    required this.autoMosqueModeRestoreMinutes,
   });
 
   SettingsState copyWith({
@@ -78,6 +95,14 @@ class SettingsState {
     double? manualLongitude,
     String? manualLocationLabel,
     FoldPaneMode? foldPaneMode,
+    LocationFetchSource? locationSourceMode,
+    bool? quranFoldStretchPage,
+    bool? smartWidgetStackEnabled,
+    bool? proactiveNotificationGuardEnabled,
+    bool? multiLevelRemindersEnabled,
+    bool? autoMosqueModeEnabled,
+    int? autoMosqueModeLeadMinutes,
+    int? autoMosqueModeRestoreMinutes,
     bool clearManualLocationLabel = false,
   }) {
     return SettingsState(
@@ -114,6 +139,21 @@ class SettingsState {
           ? null
           : (manualLocationLabel ?? this.manualLocationLabel),
       foldPaneMode: foldPaneMode ?? this.foldPaneMode,
+      locationSourceMode: locationSourceMode ?? this.locationSourceMode,
+      quranFoldStretchPage: quranFoldStretchPage ?? this.quranFoldStretchPage,
+      smartWidgetStackEnabled:
+          smartWidgetStackEnabled ?? this.smartWidgetStackEnabled,
+      proactiveNotificationGuardEnabled:
+          proactiveNotificationGuardEnabled ??
+          this.proactiveNotificationGuardEnabled,
+      multiLevelRemindersEnabled:
+          multiLevelRemindersEnabled ?? this.multiLevelRemindersEnabled,
+      autoMosqueModeEnabled:
+          autoMosqueModeEnabled ?? this.autoMosqueModeEnabled,
+      autoMosqueModeLeadMinutes:
+          autoMosqueModeLeadMinutes ?? this.autoMosqueModeLeadMinutes,
+      autoMosqueModeRestoreMinutes:
+          autoMosqueModeRestoreMinutes ?? this.autoMosqueModeRestoreMinutes,
     );
   }
 }
@@ -144,6 +184,14 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
           manualLongitude: null,
           manualLocationLabel: null,
           foldPaneMode: FoldPaneMode.auto,
+          locationSourceMode: LocationFetchSource.hybrid,
+          quranFoldStretchPage: false,
+          smartWidgetStackEnabled: true,
+          proactiveNotificationGuardEnabled: true,
+          multiLevelRemindersEnabled: true,
+          autoMosqueModeEnabled: false,
+          autoMosqueModeLeadMinutes: 10,
+          autoMosqueModeRestoreMinutes: 20,
         ),
       ) {
     _loadSettings();
@@ -211,6 +259,31 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       'foldPaneMode',
       defaultValue: FoldPaneMode.auto.name,
     );
+    final locationSourceModeName = box.get(
+      'locationSourceMode',
+      defaultValue: LocationFetchSource.hybrid.name,
+    );
+    final quranFoldStretchPage =
+        (box.get('quranFoldStretchPage', defaultValue: false) as bool?) ??
+        false;
+    final smartWidgetStackEnabled =
+        (box.get('smartWidgetStackEnabled', defaultValue: true) as bool?) ??
+        true;
+    final proactiveNotificationGuardEnabled =
+        (box.get('proactiveNotificationGuardEnabled', defaultValue: true)
+            as bool?) ??
+        true;
+    final multiLevelRemindersEnabled =
+        (box.get('multiLevelRemindersEnabled', defaultValue: true) as bool?) ??
+        true;
+    final autoMosqueModeEnabled =
+        (box.get('autoMosqueModeEnabled', defaultValue: false) as bool?) ??
+        false;
+    final autoMosqueModeLeadMinutes =
+        (box.get('autoMosqueModeLeadMinutes', defaultValue: 10) as int?) ?? 10;
+    final autoMosqueModeRestoreMinutes =
+        (box.get('autoMosqueModeRestoreMinutes', defaultValue: 20) as int?) ??
+        20;
 
     CalculationMethod calcMethod = CalculationMethod.values.firstWhere(
       (e) => e.name == calcMethodName,
@@ -228,6 +301,10 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     final foldPaneMode = FoldPaneMode.values.firstWhere(
       (e) => e.name == foldPaneModeName,
       orElse: () => FoldPaneMode.auto,
+    );
+    final locationSourceMode = LocationFetchSource.values.firstWhere(
+      (e) => e.name == locationSourceModeName,
+      orElse: () => LocationFetchSource.hybrid,
     );
 
     state = SettingsState(
@@ -253,6 +330,14 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
       manualLongitude: manualLongitude,
       manualLocationLabel: manualLocationLabel,
       foldPaneMode: foldPaneMode,
+      locationSourceMode: locationSourceMode,
+      quranFoldStretchPage: quranFoldStretchPage,
+      smartWidgetStackEnabled: smartWidgetStackEnabled,
+      proactiveNotificationGuardEnabled: proactiveNotificationGuardEnabled,
+      multiLevelRemindersEnabled: multiLevelRemindersEnabled,
+      autoMosqueModeEnabled: autoMosqueModeEnabled,
+      autoMosqueModeLeadMinutes: autoMosqueModeLeadMinutes,
+      autoMosqueModeRestoreMinutes: autoMosqueModeRestoreMinutes,
     );
   }
 
@@ -390,6 +475,56 @@ class SettingsNotifier extends StateNotifier<SettingsState> {
     state = state.copyWith(foldPaneMode: mode);
     final box = Hive.box(_boxName);
     await box.put('foldPaneMode', mode.name);
+  }
+
+  Future<void> setLocationSourceMode(LocationFetchSource mode) async {
+    state = state.copyWith(locationSourceMode: mode);
+    final box = Hive.box(_boxName);
+    await box.put('locationSourceMode', mode.name);
+  }
+
+  Future<void> setQuranFoldStretchPage(bool enabled) async {
+    state = state.copyWith(quranFoldStretchPage: enabled);
+    final box = Hive.box(_boxName);
+    await box.put('quranFoldStretchPage', enabled);
+  }
+
+  Future<void> setSmartWidgetStackEnabled(bool enabled) async {
+    state = state.copyWith(smartWidgetStackEnabled: enabled);
+    final box = Hive.box(_boxName);
+    await box.put('smartWidgetStackEnabled', enabled);
+  }
+
+  Future<void> setProactiveNotificationGuardEnabled(bool enabled) async {
+    state = state.copyWith(proactiveNotificationGuardEnabled: enabled);
+    final box = Hive.box(_boxName);
+    await box.put('proactiveNotificationGuardEnabled', enabled);
+  }
+
+  Future<void> setMultiLevelRemindersEnabled(bool enabled) async {
+    state = state.copyWith(multiLevelRemindersEnabled: enabled);
+    final box = Hive.box(_boxName);
+    await box.put('multiLevelRemindersEnabled', enabled);
+  }
+
+  Future<void> setAutoMosqueModeEnabled(bool enabled) async {
+    state = state.copyWith(autoMosqueModeEnabled: enabled);
+    final box = Hive.box(_boxName);
+    await box.put('autoMosqueModeEnabled', enabled);
+  }
+
+  Future<void> setAutoMosqueModeLeadMinutes(int minutes) async {
+    final value = minutes.clamp(5, 30);
+    state = state.copyWith(autoMosqueModeLeadMinutes: value);
+    final box = Hive.box(_boxName);
+    await box.put('autoMosqueModeLeadMinutes', value);
+  }
+
+  Future<void> setAutoMosqueModeRestoreMinutes(int minutes) async {
+    final value = minutes.clamp(10, 60);
+    state = state.copyWith(autoMosqueModeRestoreMinutes: value);
+    final box = Hive.box(_boxName);
+    await box.put('autoMosqueModeRestoreMinutes', value);
   }
 
   static ThemeMode themeModeFromStorageIndex(Object? index) {

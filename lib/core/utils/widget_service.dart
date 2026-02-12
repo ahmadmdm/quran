@@ -2,16 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:home_widget/home_widget.dart';
 
 class WidgetService {
+  static const String _widgetPackagePrefix = 'widget.';
+
   // All widget provider names
   static const List<String> _allWidgets = [
-    'MinimalWidgetProvider',
-    'SmartCardWidgetProvider',
-    'PremiumClockWidgetProvider',
-    'GlassCardWidgetProvider',
-    'QuranVerseWidgetProvider',
-    'HijriDateWidgetProvider',
-    'CalligraphyWidgetProvider',
-    'CreativeWidgetProvider',
+    '${_widgetPackagePrefix}MinimalWidgetProvider',
+    '${_widgetPackagePrefix}SmartCardWidgetProvider',
+    '${_widgetPackagePrefix}PremiumClockWidgetProvider',
+    '${_widgetPackagePrefix}GlassCardWidgetProvider',
+    '${_widgetPackagePrefix}QuranVerseWidgetProvider',
+    '${_widgetPackagePrefix}HijriDateWidgetProvider',
+    '${_widgetPackagePrefix}CalligraphyWidgetProvider',
+    '${_widgetPackagePrefix}CreativeWidgetProvider',
   ];
 
   static const Map<String, String> _widgetTypeToSlug = {
@@ -37,12 +39,49 @@ class WidgetService {
     String? location,
     String? sunriseTime, // Added sunrise time
     bool isSunrise = false, // Flag to indicate if next prayer is Sunrise
+    bool smartStackEnabled = true,
+    String? widgetContextMode,
+    String? widgetContextMessage,
+    int? dailyDhikrCount,
+    int? dailyDhikrGoal,
+    int? prayerCompletedToday,
   }) async {
     await HomeWidget.saveWidgetData<String>('next_prayer_name', nextPrayerName);
     await HomeWidget.saveWidgetData<String>('next_prayer_time', nextPrayerTime);
     await HomeWidget.saveWidgetData<String>('time_remaining', timeRemaining);
     await HomeWidget.saveWidgetData<String>('next_prayer', nextPrayerName);
     await HomeWidget.saveWidgetData<bool>('is_sunrise', isSunrise);
+    await HomeWidget.saveWidgetData<bool>(
+      'smart_stack_enabled',
+      smartStackEnabled,
+    );
+    if (widgetContextMode != null) {
+      await HomeWidget.saveWidgetData<String>(
+        'widget_context_mode',
+        widgetContextMode,
+      );
+    }
+    if (widgetContextMessage != null) {
+      await HomeWidget.saveWidgetData<String>(
+        'widget_context_message',
+        widgetContextMessage,
+      );
+    }
+    if (dailyDhikrCount != null) {
+      await HomeWidget.saveWidgetData<int>(
+        'daily_dhikr_count',
+        dailyDhikrCount,
+      );
+    }
+    if (dailyDhikrGoal != null) {
+      await HomeWidget.saveWidgetData<int>('daily_dhikr_goal', dailyDhikrGoal);
+    }
+    if (prayerCompletedToday != null) {
+      await HomeWidget.saveWidgetData<int>(
+        'daily_prayer_completed',
+        prayerCompletedToday,
+      );
+    }
 
     if (sunriseTime != null) {
       await HomeWidget.saveWidgetData<String>('sunrise_time', sunriseTime);
@@ -105,6 +144,7 @@ class WidgetService {
     String? fontStyle,
     double? fontSize,
     String? widgetType, // Add widgetType parameter
+    bool refreshWidgets = true,
   }) async {
     // Convert colors to Hex Strings (#AARRGGBB) for Android compatibility
     String toHex(int colorValue) =>
@@ -136,8 +176,9 @@ class WidgetService {
       );
     }
 
-    // Update all widgets
-    await _updateAllWidgets();
+    if (refreshWidgets) {
+      await _updateAllWidgets();
+    }
   }
 
   /// Get settings for a specific widget type
@@ -232,6 +273,52 @@ class WidgetService {
     }
   }
 
+  static Future<void> applyThemeToAllWidgets({
+    required Color backgroundColor,
+    required Color textColor,
+    required Color accentColor,
+    required double opacity,
+    String calligraphyFontStyle = 'default',
+    double calligraphyFontSize = 56.0,
+  }) async {
+    for (final widgetType in _widgetTypeToSlug.keys) {
+      await saveWidgetSettings(
+        backgroundColor: backgroundColor.toARGB32(),
+        textColor: textColor.toARGB32(),
+        accentColor: accentColor.toARGB32(),
+        opacity: opacity,
+        fontStyle: widgetType == 'Calligraphy' ? calligraphyFontStyle : null,
+        fontSize: widgetType == 'Calligraphy' ? calligraphyFontSize : null,
+        widgetType: widgetType,
+        refreshWidgets: false,
+      );
+    }
+    await _updateAllWidgets();
+  }
+
+  static Future<void> resetWidgetToDefaults(
+    String widgetType, {
+    bool refreshWidgets = true,
+  }) async {
+    await saveWidgetSettings(
+      backgroundColor: 0xFF0F1629,
+      textColor: 0xFFFFFFFF,
+      accentColor: 0xFFC9A24D,
+      opacity: 1.0,
+      fontStyle: widgetType == 'Calligraphy' ? 'default' : null,
+      fontSize: widgetType == 'Calligraphy' ? 56.0 : null,
+      widgetType: widgetType,
+      refreshWidgets: refreshWidgets,
+    );
+  }
+
+  static Future<void> resetAllWidgetsToDefaults() async {
+    for (final widgetType in _widgetTypeToSlug.keys) {
+      await resetWidgetToDefaults(widgetType, refreshWidgets: false);
+    }
+    await _updateAllWidgets();
+  }
+
   /// Force refresh all widgets - useful when prayer times change
   static Future<void> forceRefreshAllWidgets() async {
     await _updateAllWidgets();
@@ -249,7 +336,9 @@ class WidgetService {
 
     // Update Quran widget specifically
     try {
-      await HomeWidget.updateWidget(androidName: 'QuranVerseWidgetProvider');
+      await HomeWidget.updateWidget(
+        androidName: '${_widgetPackagePrefix}QuranVerseWidgetProvider',
+      );
     } catch (e) {
       debugPrint('Failed to update Quran widget: $e');
     }

@@ -38,7 +38,22 @@ class GlassCardWidgetProvider : AppWidgetProvider() {
             val timeRemaining = calculateTimeRemaining(widgetData)
             
             // Customization
+            val bgHex = getSetting(widgetData, "glass_card_background_color", "glass card_background_color", "#FF0F1629")
+            val textHex = getSetting(widgetData, "glass_card_text_color", "glass card_text_color", "#FFFFFFFF")
             val accentHex = getSetting(widgetData, "glass_card_accent_color", "glass card_accent_color", "#FFC9A24D")
+
+            val bgColor = try {
+                Color.parseColor(bgHex)
+            } catch (e: Exception) {
+                Color.parseColor("#FF0F1629")
+            }
+
+            val textColor = try {
+                Color.parseColor(textHex)
+            } catch (e: Exception) {
+                Color.WHITE
+            }
+
             val accentColor = try {
                 Color.parseColor(accentHex)
             } catch (e: Exception) {
@@ -49,6 +64,13 @@ class GlassCardWidgetProvider : AppWidgetProvider() {
             views.setTextViewText(R.id.tv_prayer_name, prayerName)
             views.setTextViewText(R.id.tv_time_remaining, timeRemaining)
             views.setTextViewText(R.id.tv_prayer_time, prayerTime)
+
+            // Apply background and text customization
+            views.setInt(R.id.iv_glass_bg, "setColorFilter", bgColor)
+            views.setTextColor(R.id.tv_label, Color.argb(160, Color.red(textColor), Color.green(textColor), Color.blue(textColor)))
+            views.setTextColor(R.id.tv_prayer_name, textColor)
+            views.setTextColor(R.id.tv_time_remaining, textColor)
+            views.setTextColor(R.id.tv_prayer_time, Color.argb(190, Color.red(textColor), Color.green(textColor), Color.blue(textColor)))
             
             // Apply accent color
             views.setTextColor(R.id.tv_islamic_icon, accentColor)

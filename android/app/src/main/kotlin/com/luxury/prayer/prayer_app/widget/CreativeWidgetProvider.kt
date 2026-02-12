@@ -67,14 +67,16 @@ class CreativeWidgetProvider : AppWidgetProvider() {
         val accentColor = try { Color.parseColor(accentHex) } catch (e: Exception) { Color.parseColor("#FFC9A24D") }
 
         // Apply Background
-        views.setInt(R.id.iv_background, "setColorFilter", bgColor)
+        views.setInt(R.id.widget_creative_root, "setBackgroundColor", bgColor)
 
         // Apply Text Colors
+        views.setTextColor(R.id.next_prayer_label, Color.argb(180, Color.red(textColor), Color.green(textColor), Color.blue(textColor)))
         views.setTextColor(R.id.next_prayer_name, accentColor)
         views.setTextColor(R.id.time_remaining, textColor)
         views.setTextColor(R.id.current_time, textColor)
         views.setTextColor(R.id.current_date, Color.argb(200, Color.red(textColor), Color.green(textColor), Color.blue(textColor)))
         views.setTextColor(R.id.location, Color.argb(150, Color.red(textColor), Color.green(textColor), Color.blue(textColor)))
+        views.setInt(R.id.divider, "setBackgroundColor", Color.argb(70, Color.red(accentColor), Color.green(accentColor), Color.blue(accentColor)))
         
         // Get prayer times
         val prayerTimes = arrayOf(
@@ -94,11 +96,46 @@ class CreativeWidgetProvider : AppWidgetProvider() {
         views.setTextViewText(R.id.isha_time, prayerTimes[5])
         
         // Get next prayer info
-        val nextPrayerName = widgetData.getString("next_prayer", "العصر") ?: "العصر"
+        val nextPrayerName = widgetData.getString("next_prayer_name", "العصر")
+            ?: widgetData.getString("next_prayer", "العصر")
+            ?: "العصر"
         val timeRemaining = calculateTimeRemaining(widgetData)
-        
-        views.setTextViewText(R.id.next_prayer_name, nextPrayerName)
-        views.setTextViewText(R.id.time_remaining, timeRemaining)
+        val smartStackEnabled = widgetData.getBoolean("smart_stack_enabled", true)
+        val contextMode = widgetData.getString("widget_context_mode", "next_prayer") ?: "next_prayer"
+        val contextMessage = widgetData.getString("widget_context_message", "تابع خطتك اليومية")
+            ?: "تابع خطتك اليومية"
+        val dhikrCount = widgetData.getInt("daily_dhikr_count", 0)
+        val dhikrGoal = widgetData.getInt("daily_dhikr_goal", 100).coerceAtLeast(1)
+        val prayerCompleted = widgetData.getInt("daily_prayer_completed", 0).coerceIn(0, 5)
+
+        val stackLabel = if (!smartStackEnabled) {
+            "الصلاة القادمة"
+        } else {
+            when (contextMode) {
+                "morning_azkar" -> "أذكار الصباح"
+                "evening_azkar" -> "أذكار المساء"
+                "prayer_focus" -> "استعداد للصلاة"
+                else -> "خطة اليوم"
+            }
+        }
+        val stackPrimary = if (!smartStackEnabled) {
+            nextPrayerName
+        } else {
+            when (contextMode) {
+                "morning_azkar" -> "أذكار الصباح"
+                "evening_azkar" -> "أذكار المساء"
+                else -> nextPrayerName
+            }
+        }
+        val stackSecondary = if (!smartStackEnabled || contextMode == "prayer_focus" || contextMode == "next_prayer") {
+            timeRemaining
+        } else {
+            contextMessage
+        }
+
+        views.setTextViewText(R.id.next_prayer_label, stackLabel)
+        views.setTextViewText(R.id.next_prayer_name, stackPrimary)
+        views.setTextViewText(R.id.time_remaining, stackSecondary)
         
         // Current time
         val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
@@ -113,11 +150,13 @@ class CreativeWidgetProvider : AppWidgetProvider() {
         )
         // Ensure month index is within bounds
         val monthIndex = (hijriDate.month - 1).coerceIn(0, 11)
-        views.setTextViewText(R.id.current_date, "${hijriDate.day} ${HIJRI_MONTHS[monthIndex]} ${hijriDate.year}")
+        val hijriLine = "${hijriDate.day} ${HIJRI_MONTHS[monthIndex]} ${hijriDate.year}"
+        val planLine = "ذكر $dhikrCount/$dhikrGoal - صلاة $prayerCompleted/5"
+        views.setTextViewText(R.id.current_date, "$hijriLine  |  $planLine")
         
         // Location
         val location = widgetData.getString("location", "الرياض") ?: "الرياض"
-        views.setTextViewText(R.id.location, location)
+        views.setTextViewText(R.id.location, "📍 $location  •  $contextMessage")
         
         // Highlight next prayer in grid
         highlightNextPrayer(views, nextPrayerName, textColor, accentColor)

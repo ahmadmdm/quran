@@ -9,6 +9,12 @@ enum GpsAccuracyLevel {
   best, // Best possible accuracy (may take longer)
 }
 
+enum LocationFetchSource {
+  hybrid, // GPS + network (recommended)
+  gps, // Prefer high-accuracy GPS readings
+  network, // Prefer coarse network-based readings
+}
+
 class LocationService {
   /// Default accuracy level
   static GpsAccuracyLevel _accuracyLevel = GpsAccuracyLevel.high;
@@ -49,7 +55,9 @@ class LocationService {
     }
   }
 
-  Future<Position> determinePosition() async {
+  Future<Position> determinePosition({
+    LocationFetchSource source = LocationFetchSource.hybrid,
+  }) async {
     bool serviceEnabled;
     LocationPermission permission;
 
@@ -72,10 +80,26 @@ class LocationService {
       );
     }
 
-    final settings = LocationSettings(
-      accuracy: _getLocationAccuracy(),
-      timeLimit: _getTimeout(),
-    );
+    LocationAccuracy accuracy;
+    Duration timeout;
+    switch (source) {
+      case LocationFetchSource.gps:
+        // Force highest precision for GPS-centric behavior.
+        accuracy = LocationAccuracy.best;
+        timeout = const Duration(seconds: 30);
+        break;
+      case LocationFetchSource.network:
+        // Keep it fast and coarse to rely mainly on network sources.
+        accuracy = LocationAccuracy.low;
+        timeout = const Duration(seconds: 8);
+        break;
+      case LocationFetchSource.hybrid:
+        accuracy = _getLocationAccuracy();
+        timeout = _getTimeout();
+        break;
+    }
+
+    final settings = LocationSettings(accuracy: accuracy, timeLimit: timeout);
     return await Geolocator.getCurrentPosition(locationSettings: settings);
   }
 
@@ -178,6 +202,17 @@ class LocationService {
         return '0-10 متر';
       case GpsAccuracyLevel.best:
         return 'أقل من 5 متر';
+    }
+  }
+
+  static String getSourceDescription(LocationFetchSource source) {
+    switch (source) {
+      case LocationFetchSource.hybrid:
+        return 'ذكي (GPS + شبكة)';
+      case LocationFetchSource.gps:
+        return 'GPS فقط';
+      case LocationFetchSource.network:
+        return 'الشبكة فقط';
     }
   }
 }

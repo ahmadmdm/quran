@@ -68,6 +68,11 @@
         <receiver 
             android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver"
             android:exported="false" />
+        
+        <!-- Scheduled Notification Receiver -->
+        <receiver
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
+            android:exported="false" />
 
         <!-- Minimal Widget -->
         <receiver android:name=".widget.MinimalWidgetProvider" android:exported="true">

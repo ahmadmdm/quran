@@ -20,6 +20,7 @@ class _WidgetCustomizationPageState
   String _selectedWidget = 'Minimal';
   String _selectedFontStyle = 'default';
   double _selectedFontSize = 56;
+  bool _isRunningCreativeTest = false;
 
   final List<Color> _backgroundColors = [
     const Color(0xFF0F1629), // Dark Blue (Default)
@@ -300,7 +301,89 @@ class _WidgetCustomizationPageState
                       _buildTextColorOption(Colors.black, 'أسود'),
                     ],
                   ),
+                  const SizedBox(height: 28),
+
+                  _buildSectionTitle(theme, 'مختبر الإبداع'),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          _accentColor.withValues(alpha: 0.16),
+                          _backgroundColor.withValues(alpha: 0.2),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: _accentColor.withValues(alpha: 0.35),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'اختبر تأثيرات حيّة على الويدجت بدون فقدان إعداداتك.',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: _isRunningCreativeTest
+                                    ? null
+                                    : _runQuickPulseForSelectedWidget,
+                                icon: const Icon(Icons.bolt, size: 18),
+                                label: const Text('نبضة سريعة'),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: FilledButton.icon(
+                                onPressed: _isRunningCreativeTest
+                                    ? null
+                                    : _runCreativeWidgetLab,
+                                icon: const Icon(Icons.auto_awesome, size: 18),
+                                label: const Text('عرض حي شامل'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
                   const SizedBox(height: 32),
+
+                  _buildSectionTitle(theme, 'إجراءات سريعة'),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isRunningCreativeTest
+                              ? null
+                              : _applyThemeToAllWidgets,
+                          icon: const Icon(Icons.copy_all, size: 18),
+                          label: const Text('نسخ النمط للجميع'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isRunningCreativeTest
+                              ? null
+                              : _resetSelectedWidgetToDefault,
+                          icon: const Icon(Icons.restart_alt, size: 18),
+                          label: const Text('إعادة الافتراضي'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
 
                   // Apply Button
                   SizedBox(
@@ -358,9 +441,9 @@ class _WidgetCustomizationPageState
         setState(() => _selectedWidget = widget['id']);
         _loadSettings();
       },
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: 140,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 140,
         margin: const EdgeInsets.only(right: 12),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
@@ -484,8 +567,8 @@ class _WidgetCustomizationPageState
       ),
       child: Center(
         child: Icon(
-          _widgetTypes
-              .firstWhere((e) => e['id'] == widgetId)['icon'] as IconData,
+          _widgetTypes.firstWhere((e) => e['id'] == widgetId)['icon']
+              as IconData,
           color: _accentColor,
           size: 18,
         ),
@@ -1253,6 +1336,230 @@ class _WidgetCustomizationPageState
         ],
       ),
     );
+  }
+
+  Future<void> _runQuickPulseForSelectedWidget() async {
+    if (_isRunningCreativeTest) return;
+    setState(() => _isRunningCreativeTest = true);
+
+    final savedWidget = _selectedWidget;
+    final backup = await WidgetService.getWidgetSettings(savedWidget);
+    final demoPalettes = _creativePalettes();
+
+    try {
+      for (final palette in demoPalettes.take(3)) {
+        await WidgetService.updateWidgetColors(
+          backgroundColor: palette['backgroundColor'] as Color,
+          textColor: palette['textColor'] as Color,
+          accentColor: palette['accentColor'] as Color,
+          opacity: (palette['opacity'] as num).toDouble(),
+          fontStyle: savedWidget == 'Calligraphy'
+              ? palette['fontStyle'] as String
+              : null,
+          fontSize: savedWidget == 'Calligraphy'
+              ? (palette['fontSize'] as num).toDouble()
+              : null,
+          widgetType: savedWidget,
+        );
+        if (!mounted) return;
+        setState(() {
+          _backgroundColor = palette['backgroundColor'] as Color;
+          _textColor = palette['textColor'] as Color;
+          _accentColor = palette['accentColor'] as Color;
+          _opacity = (palette['opacity'] as num).toDouble();
+          if (savedWidget == 'Calligraphy') {
+            _selectedFontStyle = palette['fontStyle'] as String;
+            _selectedFontSize = (palette['fontSize'] as num).toDouble();
+          }
+        });
+        await Future.delayed(const Duration(milliseconds: 320));
+      }
+    } finally {
+      await _restoreWidgetSettings(savedWidget, backup);
+      if (mounted) {
+        setState(() => _isRunningCreativeTest = false);
+        await _loadSettings();
+      }
+    }
+  }
+
+  Future<void> _runCreativeWidgetLab() async {
+    if (_isRunningCreativeTest) return;
+    setState(() => _isRunningCreativeTest = true);
+
+    final previousWidget = _selectedWidget;
+    final widgetIds = _widgetTypes.map((e) => e['id'] as String).toList();
+    final backups = <String, Map<String, dynamic>>{};
+    final palettes = _creativePalettes();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('بدأ عرض حي للويدجت...'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+
+    try {
+      for (var i = 0; i < widgetIds.length; i++) {
+        final widgetId = widgetIds[i];
+        backups[widgetId] = await WidgetService.getWidgetSettings(widgetId);
+        final palette = palettes[i % palettes.length];
+
+        await WidgetService.updateWidgetColors(
+          backgroundColor: palette['backgroundColor'] as Color,
+          textColor: palette['textColor'] as Color,
+          accentColor: palette['accentColor'] as Color,
+          opacity: (palette['opacity'] as num).toDouble(),
+          fontStyle: widgetId == 'Calligraphy'
+              ? palette['fontStyle'] as String
+              : null,
+          fontSize: widgetId == 'Calligraphy'
+              ? (palette['fontSize'] as num).toDouble()
+              : null,
+          widgetType: widgetId,
+        );
+
+        if (!mounted) return;
+        setState(() {
+          _selectedWidget = widgetId;
+          _backgroundColor = palette['backgroundColor'] as Color;
+          _textColor = palette['textColor'] as Color;
+          _accentColor = palette['accentColor'] as Color;
+          _opacity = (palette['opacity'] as num).toDouble();
+          if (widgetId == 'Calligraphy') {
+            _selectedFontStyle = palette['fontStyle'] as String;
+            _selectedFontSize = (palette['fontSize'] as num).toDouble();
+          }
+        });
+
+        await Future.delayed(const Duration(milliseconds: 360));
+      }
+    } finally {
+      for (final widgetId in widgetIds) {
+        final backup = backups[widgetId];
+        if (backup != null) {
+          await _restoreWidgetSettings(widgetId, backup);
+        }
+      }
+      await WidgetService.forceRefreshAllWidgets();
+      if (mounted) {
+        setState(() => _selectedWidget = previousWidget);
+        await _loadSettings();
+        if (mounted) {
+          setState(() => _isRunningCreativeTest = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('انتهى العرض وتمت استعادة إعداداتك الأصلية'),
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  Future<void> _restoreWidgetSettings(
+    String widgetType,
+    Map<String, dynamic> backup,
+  ) async {
+    await WidgetService.updateWidgetColors(
+      backgroundColor: Color(backup['backgroundColor'] as int),
+      textColor: Color(backup['textColor'] as int),
+      accentColor: Color(backup['accentColor'] as int),
+      opacity: (backup['opacity'] as num?)?.toDouble() ?? 1.0,
+      fontStyle: widgetType == 'Calligraphy'
+          ? (backup['fontStyle'] as String? ?? 'default')
+          : null,
+      fontSize: widgetType == 'Calligraphy'
+          ? (backup['fontSize'] as num?)?.toDouble() ?? 56
+          : null,
+      widgetType: widgetType,
+    );
+  }
+
+  List<Map<String, dynamic>> _creativePalettes() {
+    return const [
+      {
+        'backgroundColor': Color(0xFF102A43),
+        'textColor': Color(0xFFF6F9FC),
+        'accentColor': Color(0xFFFFB703),
+        'opacity': 1.0,
+        'fontStyle': 'serif',
+        'fontSize': 62.0,
+      },
+      {
+        'backgroundColor': Color(0xFF3A0CA3),
+        'textColor': Color(0xFFFFFFFF),
+        'accentColor': Color(0xFF4CC9F0),
+        'opacity': 0.95,
+        'fontStyle': 'cursive',
+        'fontSize': 66.0,
+      },
+      {
+        'backgroundColor': Color(0xFF1B4332),
+        'textColor': Color(0xFFE9F5DB),
+        'accentColor': Color(0xFFFFD166),
+        'opacity': 0.92,
+        'fontStyle': 'default',
+        'fontSize': 58.0,
+      },
+      {
+        'backgroundColor': Color(0xFF2B2D42),
+        'textColor': Color(0xFFFFFFFF),
+        'accentColor': Color(0xFFEF233C),
+        'opacity': 0.9,
+        'fontStyle': 'monospace',
+        'fontSize': 60.0,
+      },
+    ];
+  }
+
+  Future<void> _applyThemeToAllWidgets() async {
+    if (_isRunningCreativeTest) return;
+    setState(() => _isRunningCreativeTest = true);
+    try {
+      await WidgetService.applyThemeToAllWidgets(
+        backgroundColor: _backgroundColor,
+        textColor: _textColor,
+        accentColor: _accentColor,
+        opacity: _opacity,
+        calligraphyFontStyle: _selectedFontStyle,
+        calligraphyFontSize: _selectedFontSize,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('تم تطبيق نفس النمط على جميع الويدجت')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('تعذر نسخ النمط: $e')));
+    } finally {
+      if (mounted) setState(() => _isRunningCreativeTest = false);
+    }
+  }
+
+  Future<void> _resetSelectedWidgetToDefault() async {
+    if (_isRunningCreativeTest) return;
+    setState(() => _isRunningCreativeTest = true);
+    try {
+      await WidgetService.resetWidgetToDefaults(_selectedWidget);
+      if (!mounted) return;
+      await _loadSettings();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('تمت إعادة $_selectedWidget للوضع الافتراضي')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('تعذر إعادة الافتراضي: $e')));
+    } finally {
+      if (mounted) setState(() => _isRunningCreativeTest = false);
+    }
   }
 
   Future<void> _saveSettings() async {
